@@ -10,6 +10,7 @@
  *   3. 敏感读/写/追加全部 BLOCKED（含宿主 home、.env、.ssh、系统目录）
  */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 
 export const DEFAULT_EVIDENCE_PATH = process.env.OAG_L0_EVIDENCE || "D:/acceptance-result.txt";
 export const DEFAULT_ACCOUNT = process.env.OAG_AGENT_ACCOUNT || "agent_runner";
@@ -28,6 +29,26 @@ export function parseEvidence(text) {
     if (m && !/^summary/i.test(m[1])) steps.push({ name: m[1].trim(), verdict: m[2], detail: m[3].trim() });
   }
   return { whoami, isAdmin, steps, raw: text };
+}
+
+/** 账号当前是否启用：优先 PowerShell Get-LocalUser（与语言无关），失败再退回 net user */
+export function accountEnabled(account = DEFAULT_ACCOUNT) {
+  const ps = spawnSync(
+    "powershell",
+    ["-NoProfile", "-NonInteractive", "-Command",
+     `$u=Get-LocalUser -Name '${account}' -ErrorAction SilentlyContinue; if($null -eq $u){'MISSING'}else{if($u.Enabled){'TRUE'}else{'FALSE'}}`],
+    { encoding: "utf8" }
+  );
+  const out = `${ps.stdout ?? ""}`.trim();
+  if (/^TRUE$/im.test(out)) return { exists: true, enabled: true };
+  if (/^FALSE$/im.test(out)) return { exists: true, enabled: false };
+  if (/^MISSING$/im.test(out)) return { exists: false, enabled: false };
+
+  const r = spawnSync("net", ["user", account], { encoding: "buffer" });
+  if (r.status !== 0) return { exists: false, enabled: null };
+  const txt = Buffer.concat([r.stdout ?? Buffer.alloc(0)]).toString("latin1");
+  const m = txt.match(/(?:Yes|No)\s*$/m);
+  return { exists: true, enabled: m ? /^yes$/i.test(txt.match(/(Yes|No)\s*$/m)?.[1] ?? "") : null };
 }
 
 export function judgeL0({ evidencePath = DEFAULT_EVIDENCE_PATH, account = DEFAULT_ACCOUNT } = {}) {
@@ -60,6 +81,14 @@ export function judgeL0({ evidencePath = DEFAULT_EVIDENCE_PATH, account = DEFAUL
     if (!steps.some((s) => s.verdict === "BLOCKED" && s.name.toLowerCase().includes(hint.toLowerCase()))) {
       problems.push(`敏感项未覆盖或未拦住：${hint}`);
     }
+  }
+
+  // 证据可以是历史的，但账号必须现在还活着 —— 否则"隔离中"就是假话
+  const acct = accountEnabled(account);
+  if (!acct.exists) {
+    problems.push(`账号 ${account} 不存在：主体隔离当前不生效（历史证据保留）`);
+  } else if (acct.enabled === false) {
+    problems.push(`账号 ${account} 已停用：主体隔离当前不生效（历史证据保留）`);
   }
 
   const ok = problems.length === 0;

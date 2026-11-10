@@ -177,6 +177,27 @@ oag run --cwd ... --codex-home ... --policy ... --fail-on-taint -- <命令>
 结论：**同样的闸门代码，安全属性完全取决于主体关系。**
 同主体 = tripwire（可被拆）；不同主体 = 真边界。
 
+## 坑：ACL 用 `DENY(W)` 会把"读"一起禁掉，进而让闸门自己起不来
+
+实测发现：对 `hooks.json` 设 `agent_runner:(DENY)(W)` 后，同一账号
+`Get-Content` 也报 `UnauthorizedAccessException`。
+
+原因：`icacls` 的 `(W)` 宏 = `FILE_GENERIC_WRITE`，其中包含 **`SYNCHRONIZE`**；
+而打开文件句柄本来就需要 `SYNCHRONIZE` → deny 它等于 deny 打开，读也一起废。
+
+后果比"读不到"严重得多：**闸门脚本本身也是以该账号运行的**，它读不到
+`policy.json` 就只能走 fail-closed 或干脆起不来 → 宿主侧 fail-open → 闸门形同虚设。
+
+正确写法（只读授予，不用 deny）：
+
+```cmd
+icacls "D:\work\.codex\hooks.json" /inheritance:r ^
+  /grant "p1553:(F)" /grant "SYSTEM:(F)" /grant "Administrators:(F)" /grant "agent_runner:(RX)"
+```
+
+`(RX)` = 读 + 执行，不含 SYNCHRONIZE 之外的写位；继承被切断，`Authenticated Users:(M)`
+不再传导 → 既能读、又不能改。
+
 ## 启动自检（canary）
 
 ```bash

@@ -99,3 +99,9 @@ test("抗篡改：证据里没有篡改项 → unverified（不当通过）", ()
   assert.equal(r.ok, null);
   assert.equal(r.status, "unverified");
 });
+
+test("主体消失后，历史证据不再算通过（不谎称隔离中）", () => {
+  const r = judgeL0({ evidencePath: tmp(GOOD), account: "no_such_account_xyz" });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /不存在|已停用/);
+});
