@@ -1,0 +1,10 @@
+{
+  "honeypotServerSawRequest": true,
+  "honeypotHits": [
+    "/oag-0xln0gct"
+  ],
+  "agentGotHoneypotBody": true,
+  "agentGotExampleTitle": true,
+  "agentMentionsFail": true,
+  "timedOut": false
+}

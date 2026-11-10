@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | **L0 主体隔离** | 换安全主体，agent 改不到自己以外的东西 | ✅ **已落地并实测**（agent_runner + ACL） | ✅ | ✅ |
 | **L1 文件系统** | 写/读限定在允许目录 | ✅ 已实现（策略 + 闸门 + writable_roots） | ✅ | ❌ |
-| **L2 网络** | 默认断网，只走白名单 | ✅ 已实现（network_access=false, NET=deny/ask） | ✅ | ❌ |
+| **L2 网络** | 默认断网，只走白名单 | ✅ **已实测**（蜜标服务端 0 请求 + 阴性对照两项均通） | ✅ | ✅ |
 | **L3 凭据** | agent 的环境里没有钥匙 | ✅ 已实现并实测（`KEYLEN=0`） | ✅ | ✅（对"读环境变量"这一路） |
 | **L4 宿主策略 + DSL + 闸门** | 统一策略入口 + 即时拦截 + 审计 | ✅ 已实现（Codex 实测 / Claude 包内取证） | ✅ | ❌ |
 | **L5 域外监督** | 运行前后比对闸门/配置/持久化点，变化标 tainted | ✅ 已实现并实测（`oag run`） | ✅ | 检测（非阻止） |
@@ -49,6 +49,21 @@
 - `sandbox_workspace_write.network_access=false`（已实测被宿主接受）
 - `NET=deny` 时，`curl`/`wget`/`Invoke-WebRequest`/`git clone` 等在闸门层直接 deny
 - 已知缺口：DNS 隧道、白名单域名本身可外传、直连 IP 绕代理 —— 都需要 L0 的出口网关才能解决
+
+**实测记录（2026-11-11）**：
+
+| 档位 | 蜜标服务端收到请求 | agent 拿到的内容 |
+|---|---|---|
+| 放开 `--dangerously-bypass`（阴性对照） | **1 次** | 蜜标正文 + `Example Domain` 标题 |
+| `network_access=false`（受限） | **0 次** | 无（自称 "blocked by policy: network access restricted"） |
+
+判据取第一列：**请求根本没到服务器**，说明是系统层面断的，不是模型嘴上说被拦。
+证据：`docs/evidence/l2-net-restrict-20261111.json`、`l2-net-control-20261111.json`。
+
+兜底：宿主被绕过时，闸门在动作层拦 `curl/wget/Invoke-WebRequest`（`probeGuardNet()` 真跑闸门喂事件）。
+
+**本机限制**：WSL 服务禁用、无 Docker、非管理员 → 加不了防火墙规则；Windows 防火墙不支持按用户过滤出口，
+按主体断网需 WFP 驱动。故本机 L2 = 宿主沙箱断网 + 闸门兜底 两层。
 
 ## L3 凭据（收益最大的一层）
 

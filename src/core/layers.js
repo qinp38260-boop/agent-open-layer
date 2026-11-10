@@ -16,6 +16,7 @@ import { detect as detectSandbox, plan as sandboxPlan } from "./sandbox.js";
 import { collectRoots, decisionTable } from "./policy.js";
 import { judgeL0, judgeGateTamper, accountEnabled } from "./l0-evidence.js";
 import { judgeL6 } from "./l6-evidence.js";
+import { judgeNet, probeGuardNet } from "./net-evidence.js";
 
 const RANK = { "probe-verified": 3, "config-only": 2, unverified: 1, missing: 0 };
 
@@ -55,7 +56,11 @@ export function layerReport({ codexHome, claudeHome, policy }) {
     push("L1 文件系统", "写目录白名单", collectRoots(policy, "WRITE").length ? "config-only" : "missing",
       collectRoots(policy, "WRITE").join(", ") || "未开放任何目录");
     push("L1 文件系统", "越界写拦截（闸门）", "probe-verified", "已实测：目录外写被 deny（含 8 种删除写法、5 种写写法）");
-    push("L2 网络", "策略 NET 决策", "config-only", `NET=${table.NET ?? "未设置"}`);
+    const net = judgeNet();
+    push("L2 网络", "沙箱出口（服务端视角取证）", net.status, net.reason);
+    const gnet = probeGuardNet({ codexHome });
+    push("L2 网络", "动作层兜底（闸门拦联网命令）",
+      gnet.ok === true ? "probe-verified" : "missing", gnet.reason);
   } else {
     push("L1 文件系统", "策略", "unverified", "未传 --policy");
   }

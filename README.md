@@ -26,7 +26,7 @@ Measured on Windows 11 with Codex CLI 0.167.0 / DeepSeek Harness 0.1.0-rc.7.
 | **L0** gate tamper-resistance | agent cannot edit or delete its own gate | **probe-verified** — modify hooks.json / modify guard script / delete guard script / modify policy.json all BLOCKED |
 | **L0** gate still runnable | gate must be readable+executable *by that account* | **probe-verified** — `node oag-guard.mjs` runs as `agent_runner`, empty event → `{"decision":"block"}` |
 | **L1** write scoping | allowlist of writable roots, outside denied | **probe-verified** (8-action matrix) |
-| **L2** network | `NET` decision, no network in sandbox config | config-only (policy declaration) |
+| **L2** network | sandbox egress + action-level fallback | **probe-verified** — honeypot server on 127.0.0.1 recorded **0 requests** under `network_access=false` (server-side view, not the agent's claim); negative control (`--dangerously-bypass`) hit the honeypot and fetched `example.com` |
 | **L3** credentials | env scrubbing + credential-collection hard deny | **probe-verified** — agent self-test `KEYLEN=0`, model call still works; `git credential fill` / `.ssh` / DPAPI → deny |
 | **L4** host policy + guard | fail-closed guard, canary, watchdog | **probe-verified** — host fails open on 6/6 hook failures, so the guard closes on its own errors |
 | **L5** out-of-band supervision | baseline hashes before/after a run, taint detection | **probe-verified** — editing `package.json` → tainted, exit 11 |
