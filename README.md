@@ -90,6 +90,34 @@ ROADMAP.md                 adapter contract, per-host capability matrix (v0.3)
 - No bundled asset packs / skill packs / "redteam" content
 - Read [SECURITY.md](SECURITY.md) before using it on a machine you care about
 
+## v3 adapter layer (multi-host)
+
+`bin/oag.js` drives any registered host adapter. Shared safety work (lock → journal → race check →
+backup → atomic write → read-back verify → restore) lives in `src/core/safe-write.js`; an adapter only
+answers three things: *where is the host / which version*, *what text should be written*, *how to verify
+the host actually accepted it*.
+
+```bash
+node bin/oag.js adapters                       # dsh, codex, claude-code
+node bin/oag.js status                         # host + version + capabilities
+node bin/oag.js plan                           # dry-run diff
+node bin/oag.js apply --yes                    # locked, journalled, verified, audited
+node bin/oag.js verify                         # 0 pass / 1 fail / 2 unverified
+node bin/oag.js recover --yes                  # restore from the journal's backup
+node bin/oag.js audit 20
+```
+
+Per-host mechanics (why they differ):
+
+| host | format | mechanism |
+|---|---|---|
+| DSH | YAML | line-anchored managed block (`# >>> … <<<`) |
+| Codex | TOML | **key merge** — markers inside TOML collide with duplicate keys |
+| Claude Code | JSON | **namespace object** (`_openAgentGate`) — JSON has no comments, so no markers |
+
+Exit codes: `0` ok · `1` verify failed · `2` unverified/needs `--yes` · `3` host/version · `4` race/lock ·
+`5` IO · `6` recover required / marker corrupt · `7` rollback failed.
+
 ## Second reviewer (cheap)
 
 `scripts/codex-review.sh` drives an external agent harness (Codex CLI) with a third-party

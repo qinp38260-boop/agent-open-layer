@@ -20,6 +20,7 @@ export const ErrorCode = Object.freeze({
   VERIFY_FAILED: "E_VERIFY_FAILED",
   VERIFY_SKIPPED: "E_VERIFY_SKIPPED",
   ROLLBACK_FAILED: "E_ROLLBACK_FAILED",
+  RECOVER_REQUIRED: "E_RECOVER_REQUIRED",
   PROFILE_INVALID: "E_PROFILE_INVALID",
 });
 
@@ -35,6 +36,7 @@ export const EXIT_CODES = Object.freeze({
   [ErrorCode.VERIFY_FAILED]: 1,
   [ErrorCode.VERIFY_SKIPPED]: 2,
   [ErrorCode.ROLLBACK_FAILED]: 7,
+  [ErrorCode.RECOVER_REQUIRED]: 6,
   [ErrorCode.PROFILE_INVALID]: 3,
 });
 

@@ -8,7 +8,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { AdapterError, ErrorCode } from "../types.js";
 import { composeBlock, stripBlock } from "../../core/managed-block.js";
-import { readOrNull, sha256, safeWrite, safeRevert } from "../../core/safe-write.js";
+import { readOrNull, sha256, safeWrite } from "../../core/safe-write.js";
 
 const PROFILE_RE = /^[A-Za-z0-9._-]+$/;
 
