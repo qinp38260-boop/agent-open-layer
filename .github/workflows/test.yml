@@ -19,6 +19,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: unit tests
-        run: node --test tests/adapter.test.mjs tests/host.test.mjs tests/patchfile.test.mjs tests/policy.test.mjs tests/actions.test.mjs tests/audit-policy.test.mjs tests/guard-failclosed.test.mjs tests/claude-guard.test.mjs tests/run-wrapper.test.mjs tests/codex-hooks.test.mjs tests/v3.test.mjs tests/v4.test.mjs
+        run: node --test tests/adapter.test.mjs tests/host.test.mjs tests/patchfile.test.mjs tests/policy.test.mjs tests/actions.test.mjs tests/audit-policy.test.mjs tests/guard-failclosed.test.mjs tests/claude-guard.test.mjs tests/run-wrapper.test.mjs tests/l0-evidence.test.mjs tests/codex-hooks.test.mjs tests/v3.test.mjs tests/v4.test.mjs
       - name: CLI smoke (status must not throw)
         run: node bin/dsh-open.js status

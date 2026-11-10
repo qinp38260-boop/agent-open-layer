@@ -14,6 +14,7 @@ import { canary, status as guardStatus, auditGuard } from "../adapter/codex/guar
 import { status as ccStatus } from "../adapter/claude/hooks.js";
 import { detect as detectSandbox, plan as sandboxPlan } from "./sandbox.js";
 import { collectRoots, decisionTable } from "./policy.js";
+import { judgeL0 } from "./l0-evidence.js";
 
 const RANK = { "probe-verified": 3, "config-only": 2, unverified: 1, missing: 0 };
 
@@ -25,8 +26,11 @@ export function layerReport({ codexHome, claudeHome, policy }) {
   const env = detectSandbox();
   const p = sandboxPlan(env);
   const usable = p.options.filter((o) => o.available);
+  const l0 = judgeL0({ account: env.agentAccount });
   const acct = p.options.find((o) => o.id === "separate-account");
-  if (acct?.configured) {
+  if (l0.ok) {
+    push("L0 主体隔离", "独立账号 + 文件 ACL", "probe-verified", `${l0.reason}（证据：${l0.evidencePath}）`);
+  } else if (acct?.configured) {
     push("L0 主体隔离", "独立账号 + 工作目录授权", "config-only",
       `账号 ${env.agentAccount} 已存在且 ${env.agentWorkDir} 已授权；尚未以该身份跑过验证（跑一次后才算 probe-verified）`);
   } else {
