@@ -23,7 +23,7 @@ import { doctor } from "../src/core/doctor.js";
 import { compile, validatePolicy, decisionTable, coverage, policyRef, ACTIONS } from "../src/core/policy.js";
 import { runWithContinue } from "../src/core/auto-continue.js";
 import { install as installHook, remove as removeHook, status as hookStatus } from "../src/adapter/codex/hooks.js";
-import { install as installGuard, remove as removeGuard, status as guardStatus } from "../src/adapter/codex/guard.js";
+import { install as installGuard, remove as removeGuard, status as guardStatus, auditGuard } from "../src/adapter/codex/guard.js";
 import { recover as recoverFile, journalPath } from "../src/core/safe-write.js";
 
 const C = { g: "\x1b[32m", y: "\x1b[33m", r: "\x1b[31m", d: "\x1b[90m", b: "\x1b[1m", x: "\x1b[0m" };
@@ -261,6 +261,17 @@ async function main() {
       console.log(`${C.g}闸门已安装${C.x}  ${r.scriptPath}`);
       console.log(`  策略: ${r.policyPath}${r.backup ? `  （hooks.json 备份 ${r.backup}）` : ""}`);
       console.log(`${C.y}提醒：Codex 只在 --dangerously-bypass-hook-trust 下运行 hook；配合 bypass-approvals 使用才是"放开但有闸"${C.x}`);
+      return;
+    }
+    if (sub === "audit") {
+      // 体检：闸门自己会不会被 agent 拆掉（实测过：会被拆）
+      if (!opt.policy) throw new AdapterError(ErrorCode.CAPABILITY_MISSING, "guard audit 需要 --policy <文件>");
+      const pol = JSON.parse(path.resolve && fs.readFileSync(opt.policy, "utf8"));
+      for (const f of auditGuard(home, pol)) {
+        const icon = f.level === "critical" ? `${C.r}✗ 严重${C.x}` : f.level === "warning" ? `${C.y}⚠ 注意${C.x}` : `${C.g}✓${C.x}`;
+        console.log(`  ${icon}  ${f.issue}`);
+        if (f.file !== "-") console.log(`        ${f.file}`);
+      }
       return;
     }
     if (sub === "remove") {

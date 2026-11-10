@@ -1,7 +1,11 @@
 # agent-open-layer
 
-**Config-first "open mode" for AI coding agents.** Uses each host's *official* extension
-surfaces only — never patches `node_modules`, never rewrites host source.
+**Config-first permission & control layer for AI coding agents** — *not* a "make it unlimited" switch.
+
+Uses each host's *official* extension surfaces only — never patches `node_modules`, never rewrites host source.
+What it actually buys you: **explicit policy, audit trail, transactional rollback, and a pre-tool guardrail**.
+What it does **not** buy you: a security boundary against a determined agent — read
+[docs/SECURITY-BOUNDARY.md](docs/SECURITY-BOUNDARY.md) before trusting it with anything you care about.
 
 > v0.2 ships one adapter (DeepSeek Harness). The host-agnostic adapter contract is v0.3 — see [ROADMAP.md](ROADMAP.md).
 
