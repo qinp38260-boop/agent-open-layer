@@ -1,6 +1,6 @@
 # PROBES —— 本机实测能力矩阵
 
-> 生成时间：2026-11-10 16:34:23 · 生成命令：`node scripts/probe-matrix.mjs`
+> 生成时间：2026-11-10 16:35:24 · 生成命令：`node scripts/probe-matrix.mjs`
 > 证据等级：✅ 本机实测/源码级 · ⚠️ 仅文档 · U 查不到口子（不实现、不伪装）
 > **重跑即刷新**：升级宿主后跑同一条命令，与本文件 diff 就是漂移。
 
@@ -14,6 +14,7 @@
 | codex | 0.167.0 | 事件流结构（--json） | thread.started / turn.started / item.completed / turn.completed；item: agent_message\|command_execution\|error；**无 approval 字段** | `codex exec --json` | ✅ 本机实测 |
 | codex | 0.167.0 | 被 policy 拒绝的表现 | 仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令 | `codex exec -s read-only` | ✅ 本机实测 |
 | codex | 0.167.0 | Stop hook（原生自动续跑） | 存在：hooks.json → decision:block 可强制再跑一轮；需 hook 受信任 | `实测 hooks.json + --dangerously-bypass-hook-trust` | ✅ 本机实测 |
+| codex | 0.167.0 | hook 是否需要 feature flag | 不需要：带/不带 --enable hooks 结果一致（两次均 hook=2, msg=2），真正门槛是 trust | `C/D 对照实验` | ✅ 本机实测 |
 | codex | 0.167.0 | Stop hook 输入字段 | session_id/turn_id/transcript_path/cwd/hook_event_name/model/permission_mode/stop_hook_active/last_assistant_message | `hook stdin 实录` | ✅ 本机实测 |
 | codex | 0.167.0 | 自动续跑能力（exec resume） | 有（SESSION_ID + PROMPT），wrapper 可驱动续跑 | `codex exec resume --help` | ✅ 本机实测 |
 | codex | 0.167.0 | 只有 bypass 才真执行 | approval_policy=never + workspace-write 仍被拒；--dangerously-bypass-* 才真写盘 | `金丝雀写文件对照实验` | ✅ 本机实测 |

@@ -57,6 +57,7 @@ if (cv.ok) {
   add("codex", codexVer, "被 policy 拒绝的表现", "仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令", "codex exec -s read-only", "✅ 本机实测");
   const resume = sh(CODEX, ["exec", "resume", "--help"]);
   add("codex", codexVer, "Stop hook（原生自动续跑）", "存在：hooks.json → decision:block 可强制再跑一轮；需 hook 受信任", "实测 hooks.json + --dangerously-bypass-hook-trust", "✅ 本机实测");
+  add("codex", codexVer, "hook 是否需要 feature flag", "不需要：带/不带 --enable hooks 结果一致（两次均 hook=2, msg=2），真正门槛是 trust", "C/D 对照实验", "✅ 本机实测");
   add("codex", codexVer, "Stop hook 输入字段", "session_id/turn_id/transcript_path/cwd/hook_event_name/model/permission_mode/stop_hook_active/last_assistant_message", "hook stdin 实录", "✅ 本机实测");
   add("codex", codexVer, "自动续跑能力（exec resume）", has(resume.out, /Resume a previous session/) ? "有（SESSION_ID + PROMPT），wrapper 可驱动续跑" : "未解析", "codex exec resume --help", has(resume.out, /Resume a previous session/) ? "✅ 本机实测" : "U");
   add("codex", codexVer, "只有 bypass 才真执行", "approval_policy=never + workspace-write 仍被拒；--dangerously-bypass-* 才真写盘", "金丝雀写文件对照实验", "✅ 本机实测");

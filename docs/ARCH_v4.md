@@ -125,6 +125,8 @@ probe 通过（宿主自己确认了配置与运行）     ← S3 副作用证�
   model, permission_mode, stop_hook_active, last_assistant_message}`
 - 输出 `{"decision":"block","reason":"..."}` → 宿主**再跑一轮**（实测一轮内出现 2 条 `agent_message`）
 - **hook 必须 trusted**：不带 `--dangerously-bypass-hook-trust` 时 hook 根本不触发（已实测 0 次）
+- `--enable hooks` 这个 feature flag **不是必需**：带与不带结果一致（两组均 hook=2 / msg=2）
+  → 真正门槛只有 trust
 
 实现 `src/adapter/codex/hooks.js` + `oag hook status|install|remove`：
 - 合并进已有 `hooks.json`（用户条目一条不少），幂等重装（覆盖我们那条）
