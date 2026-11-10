@@ -22,7 +22,7 @@ function assertProfileName(profile) {
 
 export function dshAdapter(options = {}) {
   const profile = assertProfileName(options.profile ?? "web");
-  const cli = options.cli ?? "dsh";
+  const cli = options.cli ?? process.env.OAG_DSH_CLI ?? "dsh";
 
   return {
     id: "dsh",

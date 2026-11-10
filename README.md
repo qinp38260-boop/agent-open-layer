@@ -128,6 +128,27 @@ If no `DEEPSEEK_API_KEY` is available it returns `skipped` (exit 2) — never a 
 Exit codes: `0` ok · `1` verify failed · `2` unverified/needs `--yes` · `3` host/version · `4` race/lock ·
 `5` IO · `6` recover required / marker corrupt · `7` rollback failed.
 
+## Policy engine + doctor (v4)
+
+Describe *intent*, not config snippets; the engine compiles it per host and **refuses to pretend**:
+
+```bash
+node bin/oag.js policy                       # 预览：决策表 + 每宿主"能落地/做不到"
+node bin/oag.js policy --require-complete    # 有任何 unsupported 就 exit 2（CI 用）
+node bin/oag.js apply --policy open/policy.example.json --yes
+node bin/oag.js doctor                       # 跨宿主自检（宿主/配置可解析/残留/审计）
+node bin/oag.js doctor --json                # 机器可读
+```
+
+Policy shape (`open/policy.example.json`): `{version, identity, rules[{action,decision,scope}], autoContinue}`.
+Precedence is `deny > ask > allow`, independent of declaration order. Actions: `READ / WRITE /
+EXEC_SAFE / EXEC_DESTRUCTIVE / EXEC_INSTALL / EXEC_GIT_WRITE / NET`.
+
+Compilation is capability-aware — e.g. Codex gets `approval_policy="never"` for `EXEC_* = allow`,
+`sandbox_mode="read-only"` for `WRITE = deny`; DSH only gets `identity` because it has no verified
+relaxation key (`approval.policy=never` means **auto-reject**, not "open"). Everything unlandable is
+reported as `unsupported` with a reason. See [docs/ARCH_v4.md](docs/ARCH_v4.md).
+
 ## Second reviewer (cheap)
 
 `scripts/codex-review.sh` drives an external agent harness (Codex CLI) with a third-party

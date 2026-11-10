@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "identity": { "stripHostIdentity": true },
+  "rules": [
+    { "action": "READ", "decision": "allow", "scope": { "paths": ["workspace/**", "!workspace/.git/**"] } },
+    { "action": "WRITE", "decision": "allow", "scope": { "paths": ["workspace/**"] } },
+    { "action": "EXEC_SAFE", "decision": "allow", "scope": {} },
+    { "action": "EXEC_DESTRUCTIVE", "decision": "deny", "scope": {} },
+    { "action": "EXEC_INSTALL", "decision": "ask", "scope": {} },
+    { "action": "EXEC_GIT_WRITE", "decision": "ask", "scope": {} },
+    { "action": "NET", "decision": "ask", "scope": { "domains": ["api.github.com"] } }
+  ],
+  "autoContinue": { "enabled": false, "maxContinues": 1 }
+}

@@ -31,7 +31,7 @@ function writeState(configPath, state) {
 }
 
 export function codexAdapter(options = {}) {
-  const cli = options.cli ?? "codex";
+  const cli = options.cli ?? process.env.OAG_CODEX_CLI ?? "codex";
 
   return {
     id: "codex",
