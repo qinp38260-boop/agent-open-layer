@@ -23,6 +23,8 @@ import { doctor } from "../src/core/doctor.js";
 import { compile, validatePolicy, decisionTable, coverage, policyRef, ACTIONS } from "../src/core/policy.js";
 import { runWithContinue } from "../src/core/auto-continue.js";
 import { install as installHook, remove as removeHook, status as hookStatus } from "../src/adapter/codex/hooks.js";
+import { detect as detectSandbox, plan as sandboxPlan, renderPlan } from "../src/core/sandbox.js";
+import { install as ccInstall, status as ccStatus, remove as ccRemove } from "../src/adapter/claude/hooks.js";
 import { install as installGuard, remove as removeGuard, status as guardStatus, auditGuard, canary as guardCanary } from "../src/adapter/codex/guard.js";
 import { recover as recoverFile, journalPath } from "../src/core/safe-write.js";
 
@@ -245,9 +247,43 @@ async function main() {
     return;
   }
 
+  if (cmd === "sandbox") {
+    // oag sandbox plan —— L0 主体隔离：这台机器能用哪条路
+    const sub = process.argv[3] && !process.argv[3].startsWith("-") ? process.argv[3] : "plan";
+    if (sub !== "plan") throw new AdapterError(ErrorCode.CAPABILITY_MISSING, `未知 sandbox 子命令：${sub}`);
+    console.log(renderPlan(sandboxPlan(detectSandbox())));
+    return;
+  }
+
   if (cmd === "guard") {
     // oag guard status|install|remove --policy <file> --codex-home <dir>
     const sub = process.argv[3] && !process.argv[3].startsWith("-") ? process.argv[3] : "status";
+    const adapterId = opt.adapter ?? "codex";
+
+    // Claude Code：同一套意图判定，装到 ~/.claude/settings.json 的 hooks.PreToolUse
+    if (adapterId === "claude-code") {
+      const ccHome = opt.claudeHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".claude");
+      if (sub === "status") {
+        const st = ccStatus(ccHome);
+        console.log(`${st.installed ? `${C.g}已安装${C.x}` : `${C.d}未安装${C.x}`}  ${st.settingsPath}（脚本${st.scriptExists ? "在" : "缺"}）`);
+        console.log(`${C.y}注意：Claude 侧依据为包内取证，未真机运行${C.x}`);
+        return;
+      }
+      if (sub === "install") {
+        if (!opt.policy) throw new AdapterError(ErrorCode.CAPABILITY_MISSING, "guard install 需要 --policy <文件>");
+        const r = ccInstall({ claudeHome: ccHome, policyPath: path.resolve(opt.policy), auditPath: path.join(ccHome, "..", ".oag", "audit.jsonl") });
+        console.log(`${C.g}闸门已安装（claude-code）${C.x}  ${r.scriptPath}`);
+        if (r.backup) console.log(`  settings.json 备份：${r.backup}`);
+        return;
+      }
+      if (sub === "remove") {
+        const r = ccRemove(ccHome);
+        console.log(`${C.g}已卸载${C.x}（摘掉 ${r.removed} 条）${r.backup ? `  备份 ${r.backup}` : ""}`);
+        return;
+      }
+      throw new AdapterError(ErrorCode.CAPABILITY_MISSING, `claude-code 暂不支持 guard ${sub}`);
+    }
+
     const home = opt.codexHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex");
     if (sub === "status") {
       const st = guardStatus(home);
@@ -295,6 +331,32 @@ async function main() {
   if (cmd === "hook") {
     // oag hook status|install|remove --codex-home <dir> [--max N] [--prompt "..."]
     const sub = process.argv[3] && !process.argv[3].startsWith("-") ? process.argv[3] : "status";
+    const adapterId = opt.adapter ?? "codex";
+
+    // Claude Code：同一套意图判定，装到 ~/.claude/settings.json 的 hooks.PreToolUse
+    if (adapterId === "claude-code") {
+      const ccHome = opt.claudeHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".claude");
+      if (sub === "status") {
+        const st = ccStatus(ccHome);
+        console.log(`${st.installed ? `${C.g}已安装${C.x}` : `${C.d}未安装${C.x}`}  ${st.settingsPath}（脚本${st.scriptExists ? "在" : "缺"}）`);
+        console.log(`${C.y}注意：Claude 侧依据为包内取证，未真机运行${C.x}`);
+        return;
+      }
+      if (sub === "install") {
+        if (!opt.policy) throw new AdapterError(ErrorCode.CAPABILITY_MISSING, "guard install 需要 --policy <文件>");
+        const r = ccInstall({ claudeHome: ccHome, policyPath: path.resolve(opt.policy), auditPath: path.join(ccHome, "..", ".oag", "audit.jsonl") });
+        console.log(`${C.g}闸门已安装（claude-code）${C.x}  ${r.scriptPath}`);
+        if (r.backup) console.log(`  settings.json 备份：${r.backup}`);
+        return;
+      }
+      if (sub === "remove") {
+        const r = ccRemove(ccHome);
+        console.log(`${C.g}已卸载${C.x}（摘掉 ${r.removed} 条）${r.backup ? `  备份 ${r.backup}` : ""}`);
+        return;
+      }
+      throw new AdapterError(ErrorCode.CAPABILITY_MISSING, `claude-code 暂不支持 guard ${sub}`);
+    }
+
     const home = opt.codexHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex");
     if (sub === "status") {
       const st = hookStatus(home);

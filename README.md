@@ -7,6 +7,8 @@ What it actually buys you: **explicit policy, audit trail, transactional rollbac
 What it does **not** buy you: a security boundary against a determined agent — read
 [docs/SECURITY-BOUNDARY.md](docs/SECURITY-BOUNDARY.md) before trusting it with anything you care about.
 
+> 分层设计见 [docs/LAYERS.md](docs/LAYERS.md)（L0 主体隔离 → L4 宿主策略 + 闸门，含每层完成状态与缺口）。
+>
 > v0.2 ships one adapter (DeepSeek Harness). The host-agnostic adapter contract is v0.3 — see [ROADMAP.md](ROADMAP.md).
 
 ## Why not a "purge"-style patcher

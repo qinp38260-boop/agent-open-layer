@@ -1,0 +1,31 @@
+{
+  "name": "agent-open-layer sandbox",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" }
+  },
+  "containerEnv": {
+    "OAG_SANDBOX": "1",
+    "HISTFILE": "/dev/null"
+  },
+  "mounts": [],
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}"
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "runArgs": [
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-vscode.cpptools-extension-pack"]
+    }
+  },
+  "_design_notes": [
+    "关键：不挂载宿主 home、不挂载密钥目录。只在容器内 clone 一份工作副本。",
+    "产物用 git diff / patch 拿出来，由人审后再进入真实仓库（产物晋升）。",
+    "需要联网装依赖时才临时放开网络；默认应当 --network=none。"
+  ]
+}

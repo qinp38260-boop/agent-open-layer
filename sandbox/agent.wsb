@@ -1,0 +1,16 @@
+<Configuration>
+  <!-- Windows Sandbox：双击即开，用完即毁。需要 Windows Pro/Enterprise。 -->
+  <VGpu>Disable</VGpu>
+  <Networking>Disable</Networking>
+  <MappedFolders>
+    <!-- 只读挂载工作副本；绝不要把宿主 home / 密钥目录挂进来 -->
+    <MappedFolder>
+      <HostFolder>D:\sandbox-work</HostFolder>
+      <SandboxFolder>C:\work</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell -NoProfile -Command "Write-Host 'oag sandbox ready (read-only work dir at C:\work)'"</Command>
+  </LogonCommand>
+</Configuration>
