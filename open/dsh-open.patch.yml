@@ -1,0 +1,26 @@
+# ============================================================
+# agent-open-layer · DSH 适配器 · 配置层 v2
+# ============================================================
+# 原则：只用宿主官方扩展面（profile 的 cordis.patch.yml = 官方补丁层）。
+# 不碰 node_modules，不碰源码。
+#
+# ── 已取证：approval.policy 的真实语义（v0.1 曾搞错，v0.2 修正）──────
+# 出处：dsh-user-approval/lib/index.js 的两个「模型可见语句」常量
+#   ASK_SENTENCE   = "Approval policy: ask. Operations that require approval may
+#                     ask through the configured answerers; without an available
+#                     answerer, the request fails closed."
+#   NEVER_SENTENCE = "Approval prompts are disabled in this session: actions that
+#                     require approval are rejected automatically — do not request
+#                     sandbox escalation (do not set `sandbox_permissions`)."
+#
+# 结论：policy: never ≠ 全放开，而是「需要审批的动作一律自动拒绝」(fail-closed)。
+# 因此本文件**不设置 approval.policy**：把它当放开开关会让 agent 需要权限的动作
+# 全部失败，而不是更自由。真正的放宽属 v0.3 取证项（permission-presets 白名单 /
+# sandbox 模式），见 ROADMAP.md。
+
+# 身份：不注入 "You are an AI agent powered by DeepSeek Harness."
+# 保留空 persona，避免宿主身份句进入上下文
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    persona: ""

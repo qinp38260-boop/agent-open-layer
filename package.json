@@ -1,0 +1,23 @@
+{
+  "name": "agent-open-layer",
+  "version": "0.2.0",
+  "private": false,
+  "type": "module",
+  "description": "Config-first 'open mode' for AI coding agents. Official extension surfaces only - no host source patching, audit + idempotent revert.",
+  "bin": {
+    "dsh-open": "bin/dsh-open.js"
+  },
+  "scripts": {
+    "plan": "node bin/dsh-open.js plan",
+    "apply": "node bin/dsh-open.js apply --yes",
+    "revert": "node bin/dsh-open.js revert --yes",
+    "verify": "node bin/dsh-open.js verify",
+    "audit": "node bin/dsh-open.js audit",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "author": "cyan (local)"
+}
