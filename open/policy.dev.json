@@ -1,0 +1,17 @@
+{
+  "_说明": "开发/实验场景：写只限《本文件里写明的绝对目录》，网络默认关，破坏性动作靠审批+审计兜底。跑法 oag apply --policy open/policy.dev.json --adapter codex",
+  "_改哪里": "把 writable 里两个路径换成你的工作目录；这就是「分开」的开关 —— 不在列表里的目录一律写不进去",
+  "_做不到的": "Codex 没有「按命令类型拒绝」的键：rm -rf 在允许目录内仍然能跑。所以 dev 档的兜底是 approval_policy=on-request（会问你）+ 我方审计留痕",
+  "version": 1,
+  "identity": { "stripHostIdentity": true },
+  "rules": [
+    { "action": "READ", "decision": "allow", "scope": { "paths": ["D:/dsh-demo2/**", "D:/openlib/**"] } },
+    { "action": "WRITE", "decision": "allow", "scope": { "paths": ["D:/dsh-demo2/**", "D:/openlib/**"] } },
+    { "action": "EXEC_SAFE", "decision": "allow", "scope": {} },
+    { "action": "EXEC_DESTRUCTIVE", "decision": "deny", "scope": {} },
+    { "action": "EXEC_INSTALL", "decision": "ask", "scope": {} },
+    { "action": "EXEC_GIT_WRITE", "decision": "ask", "scope": {} },
+    { "action": "NET", "decision": "deny", "scope": {} }
+  ],
+  "autoContinue": { "enabled": false, "maxContinues": 1 }
+}

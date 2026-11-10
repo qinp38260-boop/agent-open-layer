@@ -85,6 +85,32 @@ export function decisionTable(policy) {
  * 编译到具体宿主。
  * 只输出「已验证」的落地方式（见 docs/PROBES.md）；映射不到的一律进 unsupported。
  */
+/** 从 WRITE=allow 的 scope.paths 里取绝对目录，作为 Codex 的 writable_roots */
+export function collectRoots(policy, action) {
+  const out = new Set();
+  const isAbs = (p) => /^[A-Za-z]:[\/]/.test(p) || p.startsWith("/");
+  for (const r of policy.rules ?? []) {
+    if (r.action !== action || r.decision !== "allow") continue;
+    for (const raw of r.scope?.paths ?? []) {
+      const p = String(raw).replace(/^!/, "");
+      if (!isAbs(p)) continue;
+      // 去掉 glob 部分，保留静态目录前缀
+      const cut = p.search(/[*?[{]/);
+      const base = cut === -1 ? p : p.slice(0, p.lastIndexOf("/", cut) + 1) || p;
+      out.add(base.replace(/[\/]+$/, "") || "/");
+    }
+  }
+  return [...out];
+}
+
+export function collectWritableRoots(policy) {
+  return collectRoots(policy, "WRITE");
+}
+
+export function collectReadableRoots(policy) {
+  return collectRoots(policy, "READ");
+}
+
 export function compile(policy, hostId, caps = {}) {
   validatePolicy(policy);
   const table = decisionTable(policy);
@@ -113,12 +139,33 @@ export function compile(policy, hostId, caps = {}) {
     const toml = {};
     // 已实测：--ask-for-approval 取值 on-request|never，语义分别是「由模型决定何时问」「从不询问」
     const execDecisions = ["EXEC_SAFE", "EXEC_DESTRUCTIVE", "EXEC_INSTALL", "EXEC_GIT_WRITE"].map(want).filter(Boolean);
-    if (execDecisions.includes("allow")) toml.approval_policy = '"never"';
-    else if (execDecisions.includes("ask")) toml.approval_policy = '"on-request"';
+    // ask 优先于 allow：策略里有「要问我」的动作时，不能落成 never（never=从不询问）
+    const headless = caps.headless === true;
+    if (execDecisions.includes("ask") && !headless) toml.approval_policy = '"on-request"';
+    else if (execDecisions.includes("ask") && headless) {
+      // 实测：codex exec（无头）里 approval=on-request 无人可问 → 连无害命令都被拒
+      toml.approval_policy = '"never"';
+      out.notes.push("无头模式：ask 无对象可问 → 落成 never（不弹窗）；危险动作只能靠沙箱 + writable_roots 限制");
+    }
+    else if (execDecisions.includes("allow")) toml.approval_policy = '"never"';
     else if (execDecisions.every((d) => d === "deny")) unsupported.push({ action: "EXEC_*", decision: "deny", reason: "Codex 没有「一律拒绝执行」的键；只能靠 sandbox read-only + 不给 bypass" });
     if (want("READ") === "deny" || want("WRITE") === "deny") toml.sandbox_mode = '"read-only"';
     if (want("READ") === "allow" && want("WRITE") === "allow") toml.sandbox_mode = '"workspace-write"';
-    if (want("NET") === "deny") unsupported.push({ action: "NET", decision: "deny", reason: "Codex 无独立网络开关（随 sandbox 模式走）" });
+    // 已实测接受（--strict-config 无报错）：[sandbox_workspace_write] network_access / writable_roots
+    const netD = want("NET");
+    if (netD === "deny" || netD === "ask") toml["sandbox_workspace_write.network_access"] = "false";
+    if (netD === "allow") toml["sandbox_workspace_write.network_access"] = "true";
+    if (netD === "ask") out.notes.push("NET=ask 在 Codex 上落成 network_access=false（它只有开/关，没有「问我」）");
+
+    // 范围化放开：WRITE=allow 的 scope.paths 里取绝对路径 → writable_roots（这是"分开"的关键键）
+    const roots = collectWritableRoots(policy);
+    if (roots.length && toml.sandbox_mode === '"workspace-write"') {
+      toml["sandbox_workspace_write.writable_roots"] = JSON.stringify(roots);
+      out.notes.push(`writable_roots=${roots.length} 个目录（写只限这些目录，其余仍被沙箱拦）`);
+    }
+    if (roots.length && toml.sandbox_mode === '"read-only"') {
+      out.notes.push("策略含放开目录，但 READ/WRITE 有 deny → 沙箱定为 read-only，writable_roots 不生效");
+    }
     if (policy.autoContinue?.enabled) unsupported.push({ action: "AUTO_CONTINUE", decision: "allow", reason: "Codex 自动继续走 Stop hook：配置层做不到，用 `oag hook install --adapter codex`（运行时需 --dangerously-bypass-hook-trust）" });
     if (Object.keys(toml).length) out.payload = { id: "policy", patch: { toml } };
     return out;

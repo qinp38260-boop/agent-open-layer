@@ -1,0 +1,16 @@
+{
+  "_说明": "生产/涉密场景：只读审查用。跑法 oag apply --policy open/policy.review.json --adapter codex",
+  "_适用": "对着生产代码、客户数据、密钥做分析；只允许读，不允许写、不允许改 git、不允许联网",
+  "version": 1,
+  "identity": { "stripHostIdentity": true },
+  "rules": [
+    { "action": "READ", "decision": "allow", "scope": { "paths": ["**"] } },
+    { "action": "WRITE", "decision": "deny", "scope": {} },
+    { "action": "EXEC_SAFE", "decision": "deny", "scope": {} },
+    { "action": "EXEC_DESTRUCTIVE", "decision": "deny", "scope": {} },
+    { "action": "EXEC_INSTALL", "decision": "deny", "scope": {} },
+    { "action": "EXEC_GIT_WRITE", "decision": "deny", "scope": {} },
+    { "action": "NET", "decision": "deny", "scope": {} }
+  ],
+  "autoContinue": { "enabled": false, "maxContinues": 0 }
+}
