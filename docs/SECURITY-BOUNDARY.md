@@ -79,6 +79,9 @@ runas /user:agent_runner "D:\path\to\codex.exe exec ..."
 - **无头宿主没有"询问"**：`ask` 在无交互环境等于拦截（已实测 `never`/`on-request` 都是全拒）。
 - **hook 信任是运行时开关**：`--dangerously-bypass-hook-trust` 才触发 hook；能控制命令行的人能关掉它。
 - **只覆盖 Codex 的 PreToolUse**：其它宿主、MCP 工具尚未接入同一判定层。
+- **写后执行洗白仍开放**：先写一个脚本再执行它，两步单独看都合法（审计有记录，但不拦）。
+- **配置即代码只标记不拦**：见上，属于"延迟执行"面，无法在写入时判定后果。
+- **逃逸识别是模式匹配**：换了别的宿主名、或经脚本间接启动，仍可能绕过。
 
 ## 实测 3：宿主对 hook 异常是 fail-open（关键，决定了我们的写法）
 
@@ -112,6 +115,19 @@ Write-Output ('KEYLEN=' + $env:DEEPSEEK_API_KEY.Length)
 
 **它看不到密钥**，而模型调用照常工作（`env_key` 读的是宿主进程环境，不是工具环境）。
 这条比"拦命令"有效得多：**密钥根本不在它的 shell 里，就不存在被读走再发给模型 API 的问题。**
+
+## 实测 5：逃逸类动作可以硬拦（不看策略）
+
+两类动作不受策略 allow 影响，闸门无条件拒绝：
+
+| 意图 | 识别依据 | 为什么硬拦 |
+|---|---|---|
+| `spawn_host` | 命令里出现 `codex/dsh/claude` + `exec/run/--dangerously/--profile` | **嵌套启动另一个宿主 = 新进程没有我们的 hook**，等于绕过闸门 |
+| `cred_read` | `git credential fill`、`cmdkey`、`.ssh/id_rsa`、`.aws/credentials`、`CryptUnprotectData` | 不读文件也能拿到令牌，属于"读不到文件也能偷钥匙" |
+
+另有一类只标记不拦：**配置即代码 / 延迟执行** —— 写 `.git/hooks`、`package.json`、`.vscode/tasks.json`、
+`.envrc`、`core.hooksPath` 等文件时，审计里打 `persistence: true`。
+原因：这些文件由**你本人日后用你的权限**触发，闸门管不到那一刻，只能事后可查。
 
 ## 启动自检（canary）
 

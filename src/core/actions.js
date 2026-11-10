@@ -7,17 +7,54 @@
  *   结果文件照样被删。这不是它恶意，是它"好心办坏事"（目标没变，换了条路）。
  *
  * 所以判定必须按「意图 × 目标」：
- *   1) 先把任何工具调用归一成 { op, targets }，op 只有 8 种；
+ *   1) 先把任何工具调用归一成 { op, targets }；
  *   2) 再拿 op × targets 去比策略，与书写形式无关；
- *   3) 拒绝时给出"可替代做法"和"不要换写法重试"，避免它另辟蹊径。
+ *   3) 逃逸类（嵌套启动宿主、凭据采集）无条件拒绝，不看策略。
  *
  * 本文件不 import 任何东西 —— 因为它会被原样内联进生成的 hook 脚本里。
  */
 
-export const OPS = ["read", "write", "delete", "destroy", "exec", "net", "install", "git_write"];
+export const OPS = [
+  "read",
+  "write",
+  "delete",
+  "destroy",
+  "exec",
+  "net",
+  "install",
+  "git_write",
+  "spawn_host",
+  "cred_read",
+];
+
+/** 会被宿主本人日后执行的"配置即代码"文件（延迟执行面）：写它们要单独标记 */
+export const PERSISTENCE_RE =
+  /(\.git[\\/]hooks|\.gitconfig|core\.hooksPath|core\.fsmonitor|\.vscode[\\/]tasks\.json|package\.json|\.npmrc|\.envrc|\.github[\\/]workflows|Makefile|conftest\.py)/i;
 
 /** 意图识别表：按"效果"归组，不按工具名。新增写法只加一条正则。 */
 const INTENT = [
+  {
+    // 嵌套启动另一个宿主 = 试图绕过本闸门（新进程没有我们的 hook）
+    op: "spawn_host",
+    forms: [
+      /\b(codex|dsh|claude)\b.{0,60}\b(exec|run|--dangerously|--profile)\b/i,
+      /\bcodex\.exe\b/i,
+    ],
+  },
+  {
+    // 凭据采集：不读文件也能拿到令牌的路子
+    op: "cred_read",
+    forms: [
+      /\bgit\s+credential\b/i,
+      /\bcmdkey\b/i,
+      /\bsecurity\s+find-generic-password\b/i,
+      /\bvault\s+(read|list)\b/i,
+      /\.ssh[\\/](id_rsa|id_ed25519|config)\b/i,
+      /\.aws[\\/](credentials|config)\b/i,
+      /\bdpapi\b/i,
+      /\bcryptunprotectdata\b/i,
+    ],
+  },
   {
     op: "delete",
     forms: [
@@ -180,6 +217,8 @@ export function actionFor(op) {
     case "install": return "EXEC_INSTALL";
     case "git_write": return "EXEC_GIT_WRITE";
     case "net": return "NET";
+    case "spawn_host":
+    case "cred_read": return "EXEC_DESTRUCTIVE"; // 归最严一档；实际由 guard 无条件拒绝
     default: return "EXEC_SAFE";
   }
 }
@@ -187,4 +226,9 @@ export function actionFor(op) {
 /** 哪些 op 需要做"目标是否在允许目录内"的检查 */
 export function scopedOps() {
   return ["read", "write", "delete"];
+}
+
+/** 无条件拒绝的"逃逸类"意图（不受策略 allow 影响） */
+export function isEscapeOp(op) {
+  return op === "spawn_host" || op === "cred_read";
 }

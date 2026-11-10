@@ -19,7 +19,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync, execFileSync } from "node:child_process";
 import { decisionTable, policyRef, collectRoots } from "../../core/policy.js";
-import { normalizeToolCall, actionFor, scopedOps, normPath } from "../../core/actions.js";
+import { normalizeToolCall, actionFor, scopedOps, normPath, PERSISTENCE_RE } from "../../core/actions.js";
 
 export const GUARD_SCRIPT = "oag-guard.mjs";
 export const GUARD_STATE = ".oag-guard.json";
@@ -46,7 +46,15 @@ export function classify({ toolName, command, policy, cwd }) {
       return { op, action, decision: "deny", targets, reason: `策略未开放任何目录，但动作涉及路径：${targets.slice(0, 2).join(", ")}` };
     }
   }
+  // 闸门逃逸类：无条件拒绝（不受策略 allow 影响，因为这类动作本身就等于绕闸）
+  if (op === "spawn_host" || op === "cred_read") {
+    return { op, action, decision: "deny", targets, reason: op === "spawn_host" ? "疑似嵌套启动宿主以绕过闸门" : "疑似凭据采集" };
+  }
+
   // 非 Bash 且未能归类 = 未知工具（MCP、未来新增工具）：默认拒绝，避免"没规则=放行"
+  if (op === "spawn_host" || op === "cred_read") {
+    return { op, action, decision: "deny", targets, reason: op === "spawn_host" ? "疑似嵌套启动宿主以绕过闸门" : "疑似凭据采集" };
+  }
   if (op === "exec" && toolName && toolName !== "Bash") {
     return { op, action, decision: "deny", targets, reason: `未知工具 ${toolName}，策略未覆盖（默认拒绝）` };
   }
@@ -111,6 +119,9 @@ function classify2({ toolName, command, policy, cwd }) {
       return { op, action, decision: "deny", targets, reason: "策略未开放任何目录，但动作涉及路径：" + targets.slice(0, 2).join(", ") };
     }
   }
+  if (op === "spawn_host" || op === "cred_read") {
+    return { op, action, decision: "deny", targets, reason: op === "spawn_host" ? "疑似嵌套启动宿主以绕过闸门" : "疑似凭据采集" };
+  }
   if (op === "exec" && toolName && toolName !== "Bash") {
     return { op, action, decision: "deny", targets, reason: "未知工具 " + toolName + "，策略未覆盖（默认拒绝）" };
   }
@@ -148,13 +159,14 @@ process.stdin.on("end", () => {
   const cmd = String(ev.tool_input?.command ?? "");
   const r = classify2({ toolName: ev.tool_name, command: cmd, policy, cwd: ev.cwd });
 
+  const persistence = PERSISTENCE_RE.test(" " + cmd);
   const repeat = r.decision !== "allow" && wasDenied(r.targets);
   if (r.decision !== "allow") noteDeny(r.targets);
 
   const line = JSON.stringify({
     at: new Date().toISOString(), event: "pre-tool", tool: ev.tool_name, session: ev.session_id,
     op: r.op, action: r.action, decision: r.decision, why: r.reason,
-    targets: r.targets.slice(0, 5), repeat, cmd: cmd.slice(0, 300), policy: POLICY_PATH,
+    targets: r.targets.slice(0, 5), repeat, persistence, cmd: cmd.slice(0, 300), policy: POLICY_PATH,
   });
   try { fs.mkdirSync(path.dirname(AUDIT), { recursive: true }); fs.appendFileSync(AUDIT, line + String.fromCharCode(10)); } catch {}
 
