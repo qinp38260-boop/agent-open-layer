@@ -25,12 +25,20 @@ export function layerReport({ codexHome, claudeHome, policy }) {
   const env = detectSandbox();
   const p = sandboxPlan(env);
   const usable = p.options.filter((o) => o.available);
-  push(
-    "L0 主体隔离",
-    "可用隔离路径",
-    usable.length ? "config-only" : "missing",
-    usable.length ? `可用：${usable.map((o) => o.name).join(" / ")}（尚未启用）` : "本机无可用路径（需管理员或安装 Docker）"
-  );
+  const acct = p.options.find((o) => o.id === "separate-account");
+  if (acct?.configured) {
+    push("L0 主体隔离", "独立账号 + 工作目录授权", "config-only",
+      `账号 ${env.agentAccount} 已存在且 ${env.agentWorkDir} 已授权；尚未以该身份跑过验证（跑一次后才算 probe-verified）`);
+  } else {
+    push(
+      "L0 主体隔离",
+      "可用隔离路径",
+      usable.length ? "config-only" : "missing",
+      env.agentAccountExists
+        ? `账号 ${env.agentAccount} 已建，但工作目录 ${env.agentWorkDir} ${env.agentWorkDirExists ? "未授权" : "不存在"}`
+        : usable.length ? `可用：${usable.map((o) => o.name).join(" / ")}（尚未启用）` : "本机无可用路径（需管理员或装 Docker）"
+    );
+  }
 
   // ---- L1 文件系统 / L2 网络（来自策略）----
   if (policy) {

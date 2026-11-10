@@ -44,6 +44,18 @@ export function detect() {
     d.wslError = d.wslServiceRunning ? null : "发行版列表读取失败（服务可能未启动）";
   }
 
+  // 独立账号（L0 最便宜的一条）现状探测
+  const acc = run("net", ["user", process.env.OAG_AGENT_ACCOUNT || "agent_runner"]);
+  d.agentAccount = process.env.OAG_AGENT_ACCOUNT || "agent_runner";
+  d.agentAccountExists = acc.ok && !/找不到|not found|没有此用户/i.test(acc.out);
+  const workDir = process.env.OAG_AGENT_WORK || "D:/work";
+  d.agentWorkDir = workDir;
+  d.agentWorkDirExists = fs.existsSync(workDir);
+  if (d.agentWorkDirExists) {
+    const acl = run("icacls", [workDir]);
+    d.agentWorkDirGranted = acl.ok && new RegExp(d.agentAccount + ":.*\(M\)|" + d.agentAccount + ":\(OI\)", "i").test(acl.out);
+  } else d.agentWorkDirGranted = false;
+
   const docker = run("docker", ["--version"]);
   d.dockerInstalled = docker.ok;
   d.dockerVersion = docker.ok ? docker.out.split("\n")[0] : null;
@@ -106,7 +118,10 @@ export function plan(env = detect()) {
     isolation: "强（对文件系统而言）：另一个安全主体，改不了你的 ACL",
     blocksDeliberate: true,
     available: true,
-    why: "任何 Windows 都能做，但需要管理员权限创建账号",
+    configured: Boolean(env.agentAccountExists && env.agentWorkDirGranted),
+    why: env.agentAccountExists
+      ? `账号 ${env.agentAccount} 已存在；工作目录 ${env.agentWorkDir} ${env.agentWorkDirExists ? (env.agentWorkDirGranted ? "已授权 Modify" : "存在但未授权") : "不存在"}`
+      : "任何 Windows 都能做，但需要管理员权限创建账号",
     steps: [
       "【需管理员】net user agent_runner /add",
       "【需管理员】net localgroup Users agent_runner /add",
