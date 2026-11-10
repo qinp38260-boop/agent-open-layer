@@ -15,6 +15,7 @@ import { status as ccStatus } from "../adapter/claude/hooks.js";
 import { detect as detectSandbox, plan as sandboxPlan } from "./sandbox.js";
 import { collectRoots, decisionTable } from "./policy.js";
 import { judgeL0, judgeGateTamper } from "./l0-evidence.js";
+import { judgeL6 } from "./l6-evidence.js";
 
 const RANK = { "probe-verified": 3, "config-only": 2, unverified: 1, missing: 0 };
 
@@ -89,8 +90,8 @@ export function layerReport({ codexHome, claudeHome, policy }) {
 
   // ---- L5 监督 / L6 产物晋升 ----
   push("L5 域外监督", "oag run 基线比对", "probe-verified", "已实测：改动 package.json → tainted，退出码 11；canary 不过则不开跑（10）");
-  push("L6 产物晋升", "git bundle 快照 + 人工 diff", "config-only", "oag run --snapshot 可用；流程未在真实仓库上演练");
-
+  const l6 = judgeL6();
+    push("L6 产物晋升", "git bundle 快照 + 人工 diff", l6.status, l6.reason);
   const summary = { "probe-verified": 0, "config-only": 0, unverified: 0, missing: 0 };
   for (const r of rows) summary[r.status] = (summary[r.status] ?? 0) + 1;
   const worst = rows.reduce((acc, r) => (RANK[r.status] < RANK[acc] ? r.status : acc), "probe-verified");
