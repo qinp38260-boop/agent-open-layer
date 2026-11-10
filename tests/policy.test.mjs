@@ -61,12 +61,15 @@ test("compile → codex：READ/WRITE deny 落到 sandbox read-only", () => {
   assert.equal(compile(p, "codex").payload.patch.toml.sandbox_mode, '"read-only"');
 });
 
-test("compile → claude-code：键语义未取证 → 全部 unsupported，不落盘", () => {
+test("compile → claude-code：映射到 permissions.{allow,deny,ask}（包内取证）", () => {
   const c = compile(base(), "claude-code");
-  assert.equal(c.payload, null);
-  assert.ok(c.unsupported.length >= 3);
-  assert.ok(c.unsupported.every((u) => typeof u.reason === "string" && u.reason.length > 5));
-  assert.ok(c.unsupported.some((u) => u.action === "IDENTITY"));
+  assert.ok(c.payload, "现在应该有可落地 payload");
+  const perms = c.payload.patch.json.permissions;
+  assert.ok(perms.allow.includes("Write"), "WRITE=allow → Write 进 allow");
+  assert.ok(perms.deny.includes("Bash"), "EXEC_DESTRUCTIVE=deny → Bash 进 deny");
+  assert.ok(!perms.allow.includes("Bash"), "同一工具 deny 优先，不能再出现在 allow 里");
+  assert.ok(c.unsupported.some((u) => u.action === "IDENTITY"), "identity 仍无官方键");
+  assert.ok(c.notes.some((n) => n.includes("包内证据")));
 });
 
 test("tomlDuplicateKeys 能抓到重复顶层键", () => {

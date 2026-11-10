@@ -143,7 +143,14 @@ node bin/oag.js probe --adapter dsh          # 行为探针（金丝雀；环境
 ```
 
 `continue` uses the host's own `exec resume <session>` (Codex verified); it is a **wrapper** because
-no host exposes an "auto-continue" config key. `probe` classifies by S3 side-effect > S2 denial text >
+no host exposes an "auto-continue" config key. Native alternative (also verified):
+
+```bash
+node bin/oag.js hook install --codex-home ~/.codex --max 2   # Stop hook -> decision:block
+node bin/oag.js hook status | remove
+```
+Codex only runs hooks that are **trusted** — invoke with `--dangerously-bypass-hook-trust` or complete
+its trust flow. The generated hook refuses to loop (`stop_hook_active`) and counts per session. `probe` classifies by S3 side-effect > S2 denial text >
 `inconclusive` — never a pass without evidence. Multi-file changes go through `src/core/txn.js`
 (all-or-nothing, with its own journal and recovery).
 

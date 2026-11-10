@@ -84,25 +84,26 @@ test("codex adapter：缺 patch.toml → E_CAPABILITY_MISSING", async () => {
   await assert.rejects(() => a.plan(host, { id: "x" }), (e) => e.code === ErrorCode.CAPABILITY_MISSING);
 });
 
-test("claude adapter：JSON 命名空间写入 + revert 保留宿主键", async () => {
+test("claude adapter：permissions 深合并（保留宿主原有条目）+ revert 精确摘除", async () => {
   const home = tmp("oag-claude-");
   const cfg = path.join(home, "settings.json");
-  fs.writeFileSync(cfg, JSON.stringify({ permissions: { allow: ["Bash(ls)"] } }, null, 2));
+  fs.writeFileSync(cfg, JSON.stringify({ permissions: { allow: ["Bash(git *)"] }, theme: "dark" }, null, 2));
   const a = claudeAdapter({ home });
   const host = await a.detect({});
-  const payload = { id: "c", patch: { json: { autoContinue: true } } };
+  const payload = { id: "c", patch: { json: { permissions: { allow: ["Read", "Glob"], deny: ["Bash"] } } } };
 
-  const p = await a.plan(host, payload);
-  await a.apply(p);
-  const parsed = JSON.parse(await readOrNull(cfg));
-  assert.deepEqual(parsed.permissions, { allow: ["Bash(ls)"] });
-  assert.equal(parsed._openAgentGate.autoContinue, true);
+  await a.apply(await a.plan(host, payload));
+  const applied = JSON.parse(await readOrNull(cfg));
+  assert.deepEqual(applied.permissions.allow.sort(), ["Bash(git *)", "Glob", "Read"], "原有条目必须保留（并集）");
+  assert.deepEqual(applied.permissions.deny, ["Bash"]);
+  assert.equal(applied.theme, "dark", "无关键必须原样");
   assert.equal((await a.verifyHost(host, payload)).ok, true);
 
   await a.revert(host);
-  const after = JSON.parse(await readOrNull(cfg));
-  assert.equal(after._openAgentGate, undefined, "命名空间应被移除");
-  assert.deepEqual(after.permissions, { allow: ["Bash(ls)"] }, "宿主原键必须保留");
+  const back = JSON.parse(await readOrNull(cfg));
+  assert.deepEqual(back.permissions.allow, ["Bash(git *)"], "只摘掉我们加的");
+  assert.equal(back.permissions.deny, undefined, "空数组应清掉");
+  assert.equal(back.theme, "dark");
 });
 
 test("残留 journal → apply 被拦（E_RECOVER_REQUIRED）；recover 能复原", async () => {

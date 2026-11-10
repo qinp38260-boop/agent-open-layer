@@ -1,6 +1,6 @@
 {
   "name": "agent-open-layer",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": false,
   "type": "module",
   "description": "Config-first 'open mode' for AI coding agents. Official extension surfaces only - no host source patching, audit + idempotent revert.",

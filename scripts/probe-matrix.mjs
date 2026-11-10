@@ -56,6 +56,8 @@ if (cv.ok) {
   add("codex", codexVer, "事件流结构（--json）", "thread.started / turn.started / item.completed / turn.completed；item: agent_message|command_execution|error；**无 approval 字段**", "codex exec --json", "✅ 本机实测");
   add("codex", codexVer, "被 policy 拒绝的表现", "仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令", "codex exec -s read-only", "✅ 本机实测");
   const resume = sh(CODEX, ["exec", "resume", "--help"]);
+  add("codex", codexVer, "Stop hook（原生自动续跑）", "存在：hooks.json → decision:block 可强制再跑一轮；需 hook 受信任", "实测 hooks.json + --dangerously-bypass-hook-trust", "✅ 本机实测");
+  add("codex", codexVer, "Stop hook 输入字段", "session_id/turn_id/transcript_path/cwd/hook_event_name/model/permission_mode/stop_hook_active/last_assistant_message", "hook stdin 实录", "✅ 本机实测");
   add("codex", codexVer, "自动续跑能力（exec resume）", has(resume.out, /Resume a previous session/) ? "有（SESSION_ID + PROMPT），wrapper 可驱动续跑" : "未解析", "codex exec resume --help", has(resume.out, /Resume a previous session/) ? "✅ 本机实测" : "U");
   add("codex", codexVer, "只有 bypass 才真执行", "approval_policy=never + workspace-write 仍被拒；--dangerously-bypass-* 才真写盘", "金丝雀写文件对照实验", "✅ 本机实测");
 }
@@ -79,7 +81,12 @@ const claudeDir = path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", "
 const claudeCli = sh("claude", ["--version"]);
 add("claude-code", claudeCli.ok ? claudeCli.out.trim() : "not-installed", "CLI 是否存在", claudeCli.ok ? "有" : "无（本机未安装）", "claude --version", "✅ 本机实测");
 add("claude-code", "—", "配置格式", "settings.json = JSON，**不支持注释** → 不能用 marker，只能命名空间键", "格式事实", "✅ 事实");
-add("claude-code", "—", "命名空间键是否被宿主接受", `未取证${fs.existsSync(claudeDir) ? "（有 ~/.claude 目录但无 CLI 验证）" : ""}`, "-", "U");
+add("claude-code", "2.1.322(包内)", "settings 键位", "~/.claude/settings.json → permissions.{allow,deny,ask,additionalDirectories}", "claude.exe 字符串", "✅ 包内取证");
+add("claude-code", "2.1.322(包内)", "权限模式枚举", "default | acceptEdits | auto | dontAsk | plan | bypassPermissions", "sdk-tools.d.ts", "✅ 包内取证");
+add("claude-code", "2.1.322(包内)", "bypassPermissions 前置条件", "需启动参数 --dangerously-skip-permissions（否则拒绝设置）", "claude.exe 字符串", "✅ 包内取证");
+add("claude-code", "2.1.322(包内)", "hook 事件", "PreToolUse/PostToolUse/PermissionRequest/UserPromptSubmit/SessionStart/SessionEnd/Stop/SubagentStop/PreCompact/Notification", "claude.exe 字符串", "✅ 包内取证");
+add("claude-code", "—", "规则语法", "Tool(pattern)，例如 Bash(git *)、Read(~/.zshrc)、Edit(.claude-test/specs/**)", "claude.exe 字符串", "✅ 包内取证");
+add("claude-code", "—", "真机行为", `未运行${fs.existsSync(claudeDir) ? "（有 ~/.claude 目录但未装 CLI）" : "（未安装 CLI）"}`, "-", "U");
 
 // ---------------- 行为探针（可选，要 API key）----------------
 if (withProbe) {

@@ -119,20 +119,44 @@ export function compile(policy, hostId, caps = {}) {
     if (want("READ") === "deny" || want("WRITE") === "deny") toml.sandbox_mode = '"read-only"';
     if (want("READ") === "allow" && want("WRITE") === "allow") toml.sandbox_mode = '"workspace-write"';
     if (want("NET") === "deny") unsupported.push({ action: "NET", decision: "deny", reason: "Codex 无独立网络开关（随 sandbox 模式走）" });
-    if (policy.autoContinue?.enabled) unsupported.push({ action: "AUTO_CONTINUE", decision: "allow", reason: "Codex 自动继续需 Stop hook，属 hook 层（v4.1）" });
+    if (policy.autoContinue?.enabled) unsupported.push({ action: "AUTO_CONTINUE", decision: "allow", reason: "Codex 自动继续走 Stop hook：配置层做不到，用 `oag hook install --adapter codex`（运行时需 --dangerously-bypass-hook-trust）" });
     if (Object.keys(toml).length) out.payload = { id: "policy", patch: { toml } };
     return out;
   }
 
   if (hostId === "claude-code") {
-    // Claude Code：已实测 JSON 无注释 → 只能命名空间；键语义未取证 → 一律 unsupported
+    // 依据：官方包 @anthropic-ai/claude-code 2.1.322 的 sdk-tools.d.ts + claude.exe 字符串
+    //   settings: ~/.claude/settings.json，键 permissions.{allow,deny,ask}，规则形如 "Bash(git *)" / "Read(~/.zshrc)"
+    //   模式枚举：default | acceptEdits | auto | dontAsk | plan | bypassPermissions
+    //   bypassPermissions 需启动参数 --dangerously-skip-permissions，故不由我们代设
+    const TOOLS = {
+      READ: ["Read", "Glob", "Grep"],
+      WRITE: ["Write", "Edit", "NotebookEdit"],
+      EXEC_SAFE: ["Bash"],
+      EXEC_DESTRUCTIVE: ["Bash"],
+      EXEC_INSTALL: ["Bash"],
+      EXEC_GIT_WRITE: ["Bash"],
+      NET: ["WebFetch", "WebSearch"],
+    };
+    const buckets = { allow: [], deny: [], ask: [] };
+    for (const a of ACTIONS) {
+      const d = table[a];
+      if (!d) continue;
+      for (const tool of TOOLS[a] ?? []) if (!buckets[d].includes(tool)) buckets[d].push(tool);
+    }
+    // 同一工具可能被多条规则命中：deny > ask > allow，所以在写盘前先做一次"桶内去重降级"
+    buckets.allow = buckets.allow.filter((t) => !buckets.deny.includes(t) && !buckets.ask.includes(t));
+    buckets.ask = buckets.ask.filter((t) => !buckets.deny.includes(t));
+    const permissions = {};
+    for (const [k, v] of Object.entries(buckets)) if (v.length) permissions[k] = v;
+    if (Object.keys(permissions).length) out.payload = { id: "policy", patch: { json: { permissions } } };
     if (policy.identity?.stripHostIdentity) {
       unsupported.push({ action: "IDENTITY", decision: "allow", reason: "Claude Code 身份句无官方键（CLAUDE.md 只能追加），标 UNDOCUMENTED" });
     }
-    for (const a of ACTIONS) {
-      if (table[a]) unsupported.push({ action: a, decision: table[a], reason: "Claude Code 权限键语义未取证（本机无 CLI），不落盘以免误导" });
+    if (policy.autoContinue?.enabled) {
+      unsupported.push({ action: "AUTO_CONTINUE", decision: "allow", reason: "Claude Code 自动继续需 Stop hook（配置层做不到，hook 层待 v4.4）" });
     }
-    out.notes.push("Claude Code 适配器当前只做探测与命名空间保留，不做权限写入");
+    out.notes.push("Claude Code 权限映射依据包内证据（binary strings + d.ts），未在真机跑过 → 证据等级 ⚠️");
     return out;
   }
 

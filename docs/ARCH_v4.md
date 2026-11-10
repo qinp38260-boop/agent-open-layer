@@ -118,9 +118,36 @@ probe 通过（宿主自己确认了配置与运行）     ← S3 副作用证�
 ```
 顺带修掉我自己的一个污染：probe 的临时目录原本建在 `<profile>/` 下（残留过一次），现改到系统 temp。
 
-### 5.6 仍待做
-1. Codex/Claude 的 **Stop hook** 原生续跑（现在 wrapper 已可用，hook 属优化）
-2. Claude Code 的权限键语义取证（本机无 CLI）
+### 5.7 Codex 原生自动续跑（Stop hook，已实测）
+取证（codex-cli 0.167.0）：
+- `$CODEX_HOME/hooks.json` = `{hooks:{Stop:[{matcher,hooks:[{type:"command",command}]}]}}`
+- Stop hook 的 stdin 事件：`{session_id, turn_id, transcript_path, cwd, hook_event_name:"Stop",
+  model, permission_mode, stop_hook_active, last_assistant_message}`
+- 输出 `{"decision":"block","reason":"..."}` → 宿主**再跑一轮**（实测一轮内出现 2 条 `agent_message`）
+- **hook 必须 trusted**：不带 `--dangerously-bypass-hook-trust` 时 hook 根本不触发（已实测 0 次）
+
+实现 `src/adapter/codex/hooks.js` + `oag hook status|install|remove`：
+- 合并进已有 `hooks.json`（用户条目一条不少），幂等重装（覆盖我们那条）
+- 生成的 hook 脚本：`stop_hook_active===true` 一律放行（防死循环）、**按 session 计数**到 `maxContinues` 放行
+- 卸载：只摘自己的条目 + 删脚本/计数文件，再卸一次安全
+
+真机结果：同一轮 2 次 `PONG`，计数文件 `{count:1}`，`max=1` 后停止。
+
+### 5.8 Claude Code 包内取证（从"全 U"升级为可落地）
+来源：`@anthropic-ai/claude-code@2.1.322` 的 `sdk-tools.d.ts` + `claude.exe` 字符串（**未真机运行**，本机无 CLI）：
+- 配置：`~/.claude/settings.json`，键 `permissions.{allow,deny,ask,additionalDirectories}`
+- 规则语法：`Bash(git *)`、`Read(~/.zshrc)`、`Edit(.claude-test/specs/**)`
+- 模式枚举：`default | acceptEdits | auto | dontAsk | plan | bypassPermissions`
+- `bypassPermissions` 需启动参数 `--dangerously-skip-permissions`，**故不由我们代设**
+- hook 事件：`PreToolUse/PostToolUse/PermissionRequest/UserPromptSubmit/SessionStart/SessionEnd/Stop/SubagentStop/PreCompact/Notification`
+
+因此 claude adapter 已从"命名空间占位"改为**真写 permissions**：JSON 深合并（数组并集、幂等）、
+写后读回校验、sidecar state 精确 revert；证据等级标 **⚠️ 包内取证**。
+
+### 5.9 仍待做
+1. Claude Code 的 **真机验证**（装上 CLI 后跑一次 apply/verify）
+2. Codex hook 的**官方 trust 流程**（现在依赖 `--dangerously-bypass-hook-trust`）
+3. Claude Code 侧同样可以用 Stop hook 做原生续跑（协议已取证，实现留待有了 CLI）
 
 ## 6. 复盘：什么叫"更高级"
 

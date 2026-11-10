@@ -1,6 +1,6 @@
 # PROBES —— 本机实测能力矩阵
 
-> 生成时间：2026-11-10 16:20:59 · 生成命令：`node scripts/probe-matrix.mjs`
+> 生成时间：2026-11-10 16:34:23 · 生成命令：`node scripts/probe-matrix.mjs`
 > 证据等级：✅ 本机实测/源码级 · ⚠️ 仅文档 · U 查不到口子（不实现、不伪装）
 > **重跑即刷新**：升级宿主后跑同一条命令，与本文件 diff 就是漂移。
 
@@ -13,6 +13,8 @@
 | codex | 0.167.0 | 第三方模型（OpenAI 兼容） | 可接（不写 wire_api；写了会报 chat 已废弃） | `codex exec -c model_providers.deepseek.* -m deepseek-chat` | ✅ 本机实测 |
 | codex | 0.167.0 | 事件流结构（--json） | thread.started / turn.started / item.completed / turn.completed；item: agent_message\|command_execution\|error；**无 approval 字段** | `codex exec --json` | ✅ 本机实测 |
 | codex | 0.167.0 | 被 policy 拒绝的表现 | 仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令 | `codex exec -s read-only` | ✅ 本机实测 |
+| codex | 0.167.0 | Stop hook（原生自动续跑） | 存在：hooks.json → decision:block 可强制再跑一轮；需 hook 受信任 | `实测 hooks.json + --dangerously-bypass-hook-trust` | ✅ 本机实测 |
+| codex | 0.167.0 | Stop hook 输入字段 | session_id/turn_id/transcript_path/cwd/hook_event_name/model/permission_mode/stop_hook_active/last_assistant_message | `hook stdin 实录` | ✅ 本机实测 |
 | codex | 0.167.0 | 自动续跑能力（exec resume） | 有（SESSION_ID + PROMPT），wrapper 可驱动续跑 | `codex exec resume --help` | ✅ 本机实测 |
 | codex | 0.167.0 | 只有 bypass 才真执行 | approval_policy=never + workspace-write 仍被拒；--dangerously-bypass-* 才真写盘 | `金丝雀写文件对照实验` | ✅ 本机实测 |
 | dsh | 0.1.0-rc.7 | 配置读回（--dump-config） | 可用，能看出 entry 的 config 与 patched by | `dsh --profile web --dump-config` | ✅ 本机实测 |
@@ -22,7 +24,12 @@
 | dsh | 0.1.0-rc.7 | 行为探针（金丝雀） | 已实现但环境不满足 → 返回 skipped（未验证≠通过） | `oag probe --adapter dsh` | ✅ 本机实测 |
 | claude-code | not-installed | CLI 是否存在 | 无（本机未安装） | `claude --version` | ✅ 本机实测 |
 | claude-code | — | 配置格式 | settings.json = JSON，**不支持注释** → 不能用 marker，只能命名空间键 | `格式事实` | ✅ 事实 |
-| claude-code | — | 命名空间键是否被宿主接受 | 未取证 | `-` | U |
+| claude-code | 2.1.322(包内) | settings 键位 | ~/.claude/settings.json → permissions.{allow,deny,ask,additionalDirectories} | `claude.exe 字符串` | ✅ 包内取证 |
+| claude-code | 2.1.322(包内) | 权限模式枚举 | default \| acceptEdits \| auto \| dontAsk \| plan \| bypassPermissions | `sdk-tools.d.ts` | ✅ 包内取证 |
+| claude-code | 2.1.322(包内) | bypassPermissions 前置条件 | 需启动参数 --dangerously-skip-permissions（否则拒绝设置） | `claude.exe 字符串` | ✅ 包内取证 |
+| claude-code | 2.1.322(包内) | hook 事件 | PreToolUse/PostToolUse/PermissionRequest/UserPromptSubmit/SessionStart/SessionEnd/Stop/SubagentStop/PreCompact/Notification | `claude.exe 字符串` | ✅ 包内取证 |
+| claude-code | — | 规则语法 | Tool(pattern)，例如 Bash(git *)、Read(~/.zshrc)、Edit(.claude-test/specs/**) | `claude.exe 字符串` | ✅ 包内取证 |
+| claude-code | — | 真机行为 | 未运行（未安装 CLI） | `-` | U |
 
 ## 结论（人读）
 

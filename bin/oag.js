@@ -22,6 +22,7 @@ import { readAudit, setAuditContext } from "../src/core/audit.js";
 import { doctor } from "../src/core/doctor.js";
 import { compile, validatePolicy, decisionTable, coverage, policyRef, ACTIONS } from "../src/core/policy.js";
 import { runWithContinue } from "../src/core/auto-continue.js";
+import { install as installHook, remove as removeHook, status as hookStatus } from "../src/adapter/codex/hooks.js";
 import { recover as recoverFile, journalPath } from "../src/core/safe-write.js";
 
 const C = { g: "\x1b[32m", y: "\x1b[33m", r: "\x1b[31m", d: "\x1b[90m", b: "\x1b[1m", x: "\x1b[0m" };
@@ -199,7 +200,7 @@ async function main() {
     }
     const r = await adapter.apply(plan);
     console.log(`${C.g}已写入${C.x}${r.backup ? `  备份: ${r.backup.path}` : ""}`);
-    const v = await adapter.verifyHost(host, payloadOf(opt));
+    const v = await adapter.verifyHost(host, payload); // 必须用本次真正写入的 payload（--policy 时是编译产物）
     if (v.ok) console.log(`${C.g}verify 通过${C.x}（${v.source ?? "?"}）`);
     else {
       console.log(`${C.y}verify 未通过：${v.reason}${C.x}`);
@@ -241,6 +242,29 @@ async function main() {
     const r = await adapter.revert(host);
     console.log(r.changed ? `${C.g}已还原${C.x}` : `${C.d}无需还原${C.x}`);
     return;
+  }
+
+  if (cmd === "hook") {
+    // oag hook status|install|remove --codex-home <dir> [--max N] [--prompt "..."]
+    const sub = process.argv[3] && !process.argv[3].startsWith("-") ? process.argv[3] : "status";
+    const home = opt.codexHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex");
+    if (sub === "status") {
+      const st = hookStatus(home);
+      console.log(`${st.installed ? `${C.g}已安装${C.x}` : `${C.d}未安装${C.x}`}  ${st.hooksFile}（Stop 条目 ${st.stopHooks}，脚本${st.scriptExists ? "在" : "缺"}）`);
+      return;
+    }
+    if (sub === "install") {
+      const r = installHook({ codexHome: home, maxContinues: opt.max ?? 1, continuePrompt: opt.prompt ?? undefined });
+      console.log(`${C.g}已安装 Stop hook${C.x}  max=${r.maxContinues}  ${r.hooksFile}${r.backup ? `（备份 ${r.backup}）` : ""}`);
+      console.log(`${C.y}注意：Codex 要求 hook 受信任才触发 —— 运行时要带 --dangerously-bypass-hook-trust（或走官方 trust 流程）${C.x}`);
+      return;
+    }
+    if (sub === "remove") {
+      const r = removeHook(home);
+      console.log(`${C.g}已卸载${C.x}（摘掉 ${r.removed} 条）${r.backup ? `  备份 ${r.backup}` : ""}`);
+      return;
+    }
+    throw new AdapterError(ErrorCode.CAPABILITY_MISSING, `未知 hook 子命令：${sub}`);
   }
 
   if (cmd === "continue") {

@@ -23,6 +23,34 @@ export function setJsonNamespace(text, key, value) {
   return JSON.stringify(next, null, 2) + "\n";
 }
 
+/** 深合并一个 JSON 键：对象递归合并、数组取并集（幂等），其它键原样保留 */
+export function mergeJsonKey(text, key, partial) {
+  let obj = {};
+  const src = String(text ?? "").trim();
+  if (src !== "") {
+    try {
+      obj = JSON.parse(src);
+    } catch (e) {
+      throw new AdapterError(ErrorCode.CAPABILITY_MISSING, `目标不是合法 JSON：${e.message}`);
+    }
+    if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+      throw new AdapterError(ErrorCode.CAPABILITY_MISSING, "目标 JSON 顶层不是对象");
+    }
+  }
+  const mergeObj = (a = {}, b = {}) => {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b)) {
+      const cur = out[k];
+      if (Array.isArray(v) && Array.isArray(cur)) out[k] = [...new Set([...cur, ...v])];
+      else if (v && typeof v === "object" && !Array.isArray(v) && cur && typeof cur === "object" && !Array.isArray(cur)) out[k] = mergeObj(cur, v);
+      else out[k] = v;
+    }
+    return out;
+  };
+  const next = { ...obj, [key]: mergeObj(obj[key] ?? {}, partial) };
+  return JSON.stringify(next, null, 2) + String.fromCharCode(10);
+}
+
 export function getJsonNamespace(text, key) {
   try {
     const obj = JSON.parse(String(text ?? "{}"));
