@@ -95,10 +95,32 @@ oag doctor  健康
 用 `dsh --profile headless "<prompt>"` 真跑，按可信度判：**S3 副作用（文件出现且内容对）> S2 宿主拒绝措辞 > 其余 inconclusive**。
 真机现状：本机**没有 headless profile** → 如实返回 `skipped`（"未验证≠通过"），并把真实报错带出来。
 
-### 5.4 仍待做
-1. **策略 diff 与审计联动**：audit 记了"写了什么"，还没记"对应哪条策略规则"
-2. Codex/Claude 的 **Stop hook** 方案（若要脱离 wrapper 层做原生续跑，需先取证 hook 协议）
-3. DSH headless profile 装好后，金丝雀探针可一键跑通（代码已就绪）
+### 5.4 审计 ↔ 策略联动（v4.3，已完成）
+- `policyRef(policy)` → `{hash(16位), rules, decisions, identity, autoContinue}`
+- `setAuditContext({policyRef, policyFile})` 之后，**每条审计记录都带** `policy.hash`
+- 真机：`apply --policy` 写入的审计行现在长这样
+  `{"event":"apply-ok","policy":{"hash":"93ff611264110e06","rules":7,"decisions":{...}}}`
+- `oag audit` 直接显示 `policy:93ff611264110e06`
+
+### 5.5 DSH 金丝雀真跑通（v4.3）
+卡点不是探针代码，是**宿主侧两个真问题**：
+1. **`~/.dsh/.credentials.yaml` 格式不对**：原文件是 `version/refs/records` 三段式，
+   而 `dsh-credentials-local@0.1.0-rc.7` 的 `parseCredentialsDocument` 只接受**扁平映射**
+   （凭据名 → 字符串），于是 `version`/`refs`/`records` 都被当成凭据名校验 → 报 "must be a string"。
+   → 已按扁平格式重写（密钥值原样搬过去），原文件留了两份 `.bak_*`。
+2. **headless profile 未安装** → 安了一个最小 profile（`bundles: [dsh-base, dsh-headless]`）。
+
+结果：
+```
+oag probe --adapter dsh
+  ✓ canary-write  文件已写入：hello-canary
+probe 通过（宿主自己确认了配置与运行）     ← S3 副作用证据
+```
+顺带修掉我自己的一个污染：probe 的临时目录原本建在 `<profile>/` 下（残留过一次），现改到系统 temp。
+
+### 5.6 仍待做
+1. Codex/Claude 的 **Stop hook** 原生续跑（现在 wrapper 已可用，hook 属优化）
+2. Claude Code 的权限键语义取证（本机无 CLI）
 
 ## 6. 复盘：什么叫"更高级"
 

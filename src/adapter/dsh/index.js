@@ -5,12 +5,16 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { AdapterError, ErrorCode } from "../types.js";
 import { composeBlock, stripBlock } from "../../core/managed-block.js";
 import { readOrNull, sha256, safeWrite } from "../../core/safe-write.js";
 import { runHost } from "../../core/host-cli.js";
 
 const PROFILE_RE = /^[A-Za-z0-9._-]+$/;
+
+/** <home>/profiles/<profile>/cordis.patch.yml → <home>（审计目录用它） */
+const homeOfConfig = (file) => path.dirname(path.dirname(path.dirname(file)));
 
 function assertProfileName(profile) {
   const p = String(profile ?? "");
@@ -84,14 +88,27 @@ export function dshAdapter(options = {}) {
 
     async apply(plan) {
       if (!plan.changed) return { backup: null, changed: false };
-      return safeWrite({ file: plan.file, after: plan.after, baseHash: plan.baseHash, verify: (text) => this.verifyText(plan, text) });
+      return safeWrite({
+        file: plan.file,
+        after: plan.after,
+        baseHash: plan.baseHash,
+        home: options.auditHome ?? homeOfConfig(plan.file),
+        action: "apply",
+        verify: (text) => this.verifyText(plan, text),
+      });
     },
 
     async revert(host) {
       const plan = await this.planRevert(host);
       if (!plan.changed) return { backup: null, changed: false };
       // 注意：这里写的是 plan.after（剥离后的内容）；plan.before 是"当前盘上内容"，不是目标
-      return safeWrite({ file: plan.file, after: plan.after, baseHash: plan.baseHash });
+      return safeWrite({
+        file: plan.file,
+        after: plan.after,
+        baseHash: plan.baseHash,
+        home: options.auditHome ?? homeOfConfig(plan.file),
+        action: "revert",
+      });
     },
 
     /** ① 文本层：块在不在 ② 宿主层：跑 dsh --dump-config 看宿主是否真认（乙的坑#3） */
@@ -129,7 +146,7 @@ export function dshAdapter(options = {}) {
      * 注意：headless profile 不一定装了（本机就没有）→ 明确 skipped，绝不当通过。
      */
     async probe(host, opts = {}) {
-      const work = opts.workDir ?? fs.mkdtempSync(path.join(opts.tmpRoot ?? path.dirname(host.configPath), "oag-dshprobe-"));
+      const work = opts.workDir ?? fs.mkdtempSync(path.join(opts.tmpRoot ?? os.tmpdir(), "oag-dshprobe-")); // 绝不在用户 profile 里建临时目录
       fs.mkdirSync(work, { recursive: true });
       const canary = path.join(work, "canary.txt");
       const runner =

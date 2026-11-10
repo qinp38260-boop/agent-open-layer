@@ -18,9 +18,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { bootstrap, list, get, detectAny } from "../src/adapter/index.js";
 import { AdapterError, ErrorCode, exitCodeFor } from "../src/adapter/types.js";
-import { readAudit } from "../src/core/audit.js";
+import { readAudit, setAuditContext } from "../src/core/audit.js";
 import { doctor } from "../src/core/doctor.js";
-import { compile, validatePolicy, decisionTable, coverage, ACTIONS } from "../src/core/policy.js";
+import { compile, validatePolicy, decisionTable, coverage, policyRef, ACTIONS } from "../src/core/policy.js";
 import { runWithContinue } from "../src/core/auto-continue.js";
 import { recover as recoverFile, journalPath } from "../src/core/safe-write.js";
 
@@ -94,10 +94,14 @@ async function main() {
     return;
   }
   if (cmd === "audit") {
-    const home = opt.dshHome ?? opt.codexHome ?? opt.claudeHome ?? process.env.USERPROFILE;
+    // 审计默认读 dsh home（与 adapter 推导一致），不再退到 USERPROFILE
+    const home = opt.dshHome ?? opt.codexHome ?? opt.claudeHome ?? (process.env.DSH_HOME || path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".dsh"));
     const rows = readAudit(home, opt.n);
     if (!rows.length) console.log(`${C.d}（无审计记录：${path.join(home, ".oag", "audit.jsonl")}）${C.x}`);
-    for (const r of rows) console.log(`${r.at}  ${String(r.event).padEnd(24)} ${r.file ?? ""}`);
+    for (const r of rows) {
+      const p = r.policy ? `  policy:${r.policy.hash}` : "";
+      console.log(`${r.at}  ${String(r.event).padEnd(24)} ${(r.file ?? "").padEnd(52)}${p}`);
+    }
     return;
   }
 
@@ -168,6 +172,7 @@ async function main() {
     let payload;
     if (opt.policy) {
       const rawPolicy = JSON.parse(fs.readFileSync(opt.policy, "utf8"));
+      setAuditContext({ policyRef: policyRef(rawPolicy), policyFile: opt.policy });
       const c = compile(rawPolicy, adapter.id);
       if (!c.payload) {
         console.log(`${C.y}该策略在 ${adapter.id} 上没有可落地部分${C.x}`);
@@ -207,6 +212,7 @@ async function main() {
     let vPayload;
     if (opt.policy) {
       const rawPolicy = JSON.parse(fs.readFileSync(opt.policy, "utf8"));
+      setAuditContext({ policyRef: policyRef(rawPolicy), policyFile: opt.policy });
       const c = compile(rawPolicy, adapter.id);
       if (!c.payload) {
         console.log(`${C.y}该策略在 ${adapter.id} 上没有可验证部分${C.x}`);

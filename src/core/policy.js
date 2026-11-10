@@ -7,6 +7,7 @@
  * - 只编译有「已验证语义」的映射；映射不到的进 unsupported，CLI 必须以非零退出码提示
  * - 同一条规则可在多个宿主上有不同落地方式（dsh 用 identity 文本，codex 用 TOML 键）
  */
+import crypto from "node:crypto";
 import { AdapterError, ErrorCode } from "../adapter/types.js";
 
 export const ACTIONS = [
@@ -49,6 +50,25 @@ export function effectiveDecision(policy, action) {
   const hits = (policy.rules ?? []).filter((r) => r.action === action);
   if (!hits.length) return null;
   return hits.reduce((acc, r) => (PRECEDENCE[r.decision] > PRECEDENCE[acc] ? r.decision : acc), "allow");
+}
+
+/** 策略指纹：内容哈希 + 决策摘要，用于审计里"这条记录对应哪份策略" */
+export function policyRef(policy) {
+  validatePolicy(policy);
+  const canonical = JSON.stringify({
+    version: policy.version,
+    identity: policy.identity ?? null,
+    autoContinue: policy.autoContinue ?? null,
+    rules: (policy.rules ?? []).map((r) => ({ action: r.action, decision: r.decision, scope: r.scope ?? {} })),
+  });
+  const table = decisionTable(policy);
+  return {
+    hash: crypto.createHash("sha256").update(canonical).digest("hex").slice(0, 16),
+    rules: (policy.rules ?? []).length,
+    decisions: table,
+    identity: Boolean(policy.identity?.stripHostIdentity),
+    autoContinue: policy.autoContinue?.enabled ?? false,
+  };
 }
 
 /** 汇总成一张 action → decision 表（便于打印与测试） */
