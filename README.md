@@ -112,8 +112,18 @@ Per-host mechanics (why they differ):
 | host | format | mechanism |
 |---|---|---|
 | DSH | YAML | line-anchored managed block (`# >>> … <<<`) |
-| Codex | TOML | **key merge** — markers inside TOML collide with duplicate keys |
+| Codex | TOML | **key merge** + sidecar state file for safe `revert` |
 | Claude Code | JSON | **namespace object** (`_openAgentGate`) — JSON has no comments, so no markers |
+
+`probe` asks the **host itself** to validate the config (not just "is the text there"):
+
+```bash
+node bin/oag.js probe --adapter codex --cli <path-to>/codex.cmd
+#   ✓ schema-accepted   宿主 --strict-config 未报未知字段
+#   ✓ host-ran          turn.completed + 有回复
+```
+
+If no `DEEPSEEK_API_KEY` is available it returns `skipped` (exit 2) — never a pass.
 
 Exit codes: `0` ok · `1` verify failed · `2` unverified/needs `--yes` · `3` host/version · `4` race/lock ·
 `5` IO · `6` recover required / marker corrupt · `7` rollback failed.

@@ -135,3 +135,61 @@ test("CLI 冒烟：oag status / plan 在临时 DSH home 上可跑", () => {
   const plan = execFileSync(process.execPath, [bin, "plan", "--dsh-home", home], { encoding: "utf8" });
   assert.match(plan, /changed=true/);
 });
+
+// —— 本轮新增：codex revert（sidecar state）+ probe ——
+import { removeTomlKey } from "../src/core/key-merge.js";
+
+test("removeTomlKey 只删目标键", () => {
+  const t = 'a = 1\napproval_policy = "never"\nb = 2\n';
+  const r = removeTomlKey(t, "approval_policy");
+  assert.ok(!r.includes("approval_policy"));
+  assert.ok(r.includes("a = 1") && r.includes("b = 2"));
+});
+
+test("codex revert：原本不存在的键被删干净，用户注释与其它键保留", async () => {
+  const home = tmp("oag-cx-rev-");
+  const cfg = path.join(home, "config.toml");
+  const original = '# 用户注释\nmodel = "o3"\n\n[features]\nfoo = true\n';
+  fs.writeFileSync(cfg, original);
+  const a = codexAdapter({ home, cli: "/nonexistent.cmd" });
+  const host = await a.detect({});
+  await a.apply(await a.plan(host, { id: "c", patch: { toml: { approval_policy: '"never"' } } }));
+  assert.match(await readOrNull(cfg), /approval_policy = "never"/);
+
+  const r = await a.revert(host);
+  assert.equal(r.changed, true);
+  const back = await readOrNull(cfg);
+  assert.equal(back, original, "必须逐字回到原始内容");
+  assert.equal(fs.existsSync(`${cfg}.oag-state.json`), false, "state 文件应被清理");
+});
+
+test("codex revert：原本就存在的键被还原成旧值", async () => {
+  const home = tmp("oag-cx-rev2-");
+  const cfg = path.join(home, "config.toml");
+  fs.writeFileSync(cfg, 'approval_policy = "on-request"\n');
+  const a = codexAdapter({ home, cli: "/nonexistent.cmd" });
+  const host = await a.detect({});
+  await a.apply(await a.plan(host, { id: "c", patch: { toml: { approval_policy: '"never"' } } }));
+  assert.equal((await readOrNull(cfg)).trim(), 'approval_policy = "never"');
+  await a.revert(host);
+  assert.equal((await readOrNull(cfg)).trim(), 'approval_policy = "on-request"');
+});
+
+test("codex revert 没有 state → E_CAPABILITY_MISSING（不瞎猜）", async () => {
+  const home = tmp("oag-cx-rev3-");
+  fs.writeFileSync(path.join(home, "config.toml"), 'a = 1\n');
+  const a = codexAdapter({ home, cli: "/nonexistent.cmd" });
+  const host = await a.detect({});
+  await assert.rejects(() => a.revert(host), (e) => e.code === ErrorCode.CAPABILITY_MISSING);
+});
+
+test("codex probe 无 key → skipped（未验证≠通过）", async () => {
+  const home = tmp("oag-cx-probe-");
+  fs.writeFileSync(path.join(home, "config.toml"), 'model = "o3"\n');
+  const a = codexAdapter({ home, cli: "/nonexistent.cmd" });
+  const host = await a.detect({});
+  const r = await a.probe(host, { env: {} });
+  assert.equal(r.ok, false);
+  assert.equal(r.skipped, true);
+  assert.match(r.reason, /DEEPSEEK_API_KEY/);
+});

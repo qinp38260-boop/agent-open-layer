@@ -5,10 +5,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { AdapterError, ErrorCode } from "../types.js";
 import { composeBlock, stripBlock } from "../../core/managed-block.js";
 import { readOrNull, sha256, safeWrite } from "../../core/safe-write.js";
+import { runHost } from "../../core/host-cli.js";
 
 const PROFILE_RE = /^[A-Za-z0-9._-]+$/;
 
@@ -101,9 +101,8 @@ export function dshAdapter(options = {}) {
       if (!text.includes("# >>> open-agent-gate managed")) return { ok: false, reason: "托管块缺失" };
       if (!payload?.expect) return { ok: false, reason: "未声明 expect 断言 → 未验证（不算通过）", skipped: true };
       try {
-        const out = execFileSync(cli, ["--profile", profile, "--dump-config"], {
+        const out = runHost(cli, ["--profile", profile, "--dump-config"], {
           encoding: "utf8",
-          shell: /\.(cmd|bat)$/i.test(cli),
           timeout: 120000,
           stdio: ["ignore", "pipe", "pipe"],
         });

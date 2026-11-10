@@ -32,7 +32,7 @@ const DEFAULT_PAYLOAD = {
 function argv() {
   const a = process.argv.slice(2);
   const cmd = a[0] ?? "status";
-  const opt = { yes: false, profile: "web", adapter: null, payload: null, home: null, cli: null, dshHome: null, codexHome: null, claudeHome: null, n: 20 };
+  const opt = { yes: false, profile: "web", adapter: null, payload: null, home: null, cli: null, dshHome: null, codexHome: null, claudeHome: null, n: 20, model: null, keyEnv: null, baseUrl: null };
   for (let i = 1; i < a.length; i += 1) {
     const t = a[i];
     if (t === "--yes" || t === "-y") opt.yes = true;
@@ -41,6 +41,9 @@ function argv() {
     else if (t === "--payload") opt.payload = a[++i];
     else if (t === "--home") opt.home = a[++i];
     else if (t === "--cli") opt.cli = a[++i];
+    else if (t === "--model") opt.model = a[++i];
+    else if (t === "--key-env") opt.keyEnv = a[++i];
+    else if (t === "--base-url") opt.baseUrl = a[++i];
     else if (t === "--dsh-home") opt.dshHome = a[++i];
     else if (t === "--codex-home") opt.codexHome = a[++i];
     else if (t === "--claude-home") opt.claudeHome = a[++i];
@@ -66,7 +69,7 @@ function printDiff(before, after) {
 
 async function main() {
   const { cmd, opt } = argv();
-  bootstrap({ profile: opt.profile, dshHome: opt.dshHome ?? opt.home, dshCli: opt.cli, codexHome: opt.codexHome, claudeHome: opt.claudeHome, auditHome: opt.dshHome ?? opt.codexHome ?? opt.claudeHome ?? null });
+  bootstrap({ profile: opt.profile, dshHome: opt.dshHome ?? opt.home, dshCli: opt.cli, codexHome: opt.codexHome, codexCli: opt.cli, claudeHome: opt.claudeHome, auditHome: opt.dshHome ?? opt.codexHome ?? opt.claudeHome ?? null });
 
   if (cmd === "adapters") {
     console.log(`${C.b}已注册 adapter${C.x}: ${list().join(", ")}`);
@@ -142,6 +145,28 @@ async function main() {
     }
     const r = await adapter.revert(host);
     console.log(r.changed ? `${C.g}已还原${C.x}` : `${C.d}无需还原${C.x}`);
+    return;
+  }
+
+  if (cmd === "probe") {
+    if (typeof adapter.probe !== "function") {
+      console.log(`${C.y}${adapter.id} 没有实现 probe（未验证≠通过）${C.x}`);
+      process.exitCode = 2;
+      return;
+    }
+    const r = await adapter.probe(host, { model: opt.model ?? undefined, keyEnv: opt.keyEnv ?? undefined, baseUrl: opt.baseUrl ?? undefined });
+    console.log(`${C.b}probe${C.x}  ${adapter.id} ${host.version}  skipped=${r.skipped ?? false}`);
+    for (const s of r.steps ?? []) console.log(`  ${s.ok ? `${C.g}✓${C.x}` : `${C.r}✗${C.x}`} ${s.name}  ${C.d}${s.detail ?? ""}${C.x}`);
+    if (r.skipped) {
+      console.log(`${C.y}未执行：${r.reason}${C.x}`);
+      process.exitCode = 2;
+      return;
+    }
+    // probe 结果落审计
+    const { logAudit } = await import("../src/core/audit.js");
+    logAudit(opt.dshHome ?? opt.codexHome ?? null, "probe", { adapter: adapter.id, host: host.version, ok: r.ok, steps: r.steps });
+    console.log(r.ok ? `${C.g}probe 通过（宿主自己确认了配置与运行）${C.x}` : `${C.r}probe 未通过${C.x}`);
+    process.exitCode = r.ok ? 0 : 1;
     return;
   }
 

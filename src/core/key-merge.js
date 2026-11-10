@@ -52,3 +52,10 @@ export function getTomlKey(text, key) {
   const m = re.exec(String(text ?? ""));
   return m ? m[1].trim() : undefined;
 }
+
+/** 删掉某个顶层键（回滚"原本不存在"的键要用这个） */
+export function removeTomlKey(text, key) {
+  const src = String(text ?? "").replace(/\r\n/g, "\n");
+  const re = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=.*\\n?`, "m");
+  return src.replace(re, "");
+}

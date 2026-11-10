@@ -48,11 +48,11 @@ await a.verifyHost(host, payload);                 // 跑 --dump-config 实证
 
 ## 4. 还没做（明确欠账）
 
-1. **CLI 接线**：现有 `bin/dsh-open.js` 还是 v0 的直写逻辑，未切到 adapter（v3.1 第一件事）
-2. **Codex / Claude Code adapter**：目录预留，未实现（Codex = TOML 无 marker，需命名空间序列化）
-3. **journal 恢复入口**：`readJournal()` 有了，但 CLI 还没在启动时拦 `RECOVER_REQUIRED`
-4. **并发锁**：多进程同时 apply 仍可能交错（journal 能事后发现，不能事前互斥）
-5. **审计一致性**：`audit.jsonl` 仍是旧模块，未与 adapter 层统一
+1. **Codex `revert`**：✅ 已完成（sidecar `<config>.oag-state.json` 记原值，原本不存在则删键；无 state 抛错不瞎猜）
+2. **Codex `probe`**：✅ 已完成（`codex exec --strict-config --json` → 宿主自己校验未知字段 + 真跑一轮看 turn.completed；无 API key 返回 skipped）
+3. **Claude Code 配置键语义**：未取证（`claude` CLI 本机未装，命名空间写了但"宿主认不认"无法验）→ 保持 `skipped`
+4. **DSH 的 probe**：`verifyHost` 已能跑 `--dump-config` 断言；行为探针（金丝雀）仍属 v3.2
+5. **Codex / Claude Code 的 `revert` 之外的 planRevert**：Claude 有实现，Codex 走 state 路线，语义已覆盖
 
 ## 5. 复盘：这是三方各出一块的结果
 
