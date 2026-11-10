@@ -114,7 +114,7 @@ test("回归：策略引擎给的字符串 expect 也能被 dsh verifyHost 使�
   const v = await a.verifyHost(host, compiled.payload);
   // CLI 跑不动 → skipped（不算通过），但绝不能因为 expect 是字符串就抛 TypeError
   assert.equal(v.ok, false);
-  assert.match(v.reason, /宿主 CLI 跑不动|未体现断言/);
+  assert.match(v.reason, /非宿主默认 home|宿主 CLI 跑不动|未体现断言/);
   assert.ok(!/is not a function/.test(v.reason), "不能出现 TypeError 文案");
 });
 

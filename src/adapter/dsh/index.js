@@ -97,7 +97,8 @@ export function dshAdapter(options = {}) {
     /** ① 文本层：块在不在 ② 宿主层：跑 dsh --dump-config 看宿主是否真认（乙的坑#3） */
     async verifyHost(host, payload) {
       // dsh 没有 --home：非默认 home 一律"无法读回"，明确 skipped（未验证≠通过）
-      const defHome = path.resolve(options.home ?? process.env.DSH_HOME ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".dsh"));
+      // 注意：不能用 options.home 当基准 —— dsh CLI 只认环境默认 home（没有 --home 参数）
+      const defHome = path.resolve(process.env.DSH_HOME ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".dsh"));
       const hostHome = path.resolve(path.dirname(path.dirname(path.dirname(host.configPath)))); // <home>/profiles/<profile>/file → <home>
       if (hostHome !== defHome) {
         return { ok: false, skipped: true, reason: `非宿主默认 home（${hostHome}），dsh 无法读回该目录 → 未验证` };
