@@ -7,7 +7,7 @@
 
 | 层 | 目的 | 状态 | 挡"误操作" | 挡"主动拆解" |
 |---|---|---|---|---|
-| **L0 主体隔离** | 换安全主体，agent 改不到自己以外的东西 | ⚠️ 脚手架就绪，**待你提权执行** | ✅ | ✅ |
+| **L0 主体隔离** | 换安全主体，agent 改不到自己以外的东西 | ✅ **已落地并实测**（agent_runner + ACL） | ✅ | ✅ |
 | **L1 文件系统** | 写/读限定在允许目录 | ✅ 已实现（策略 + 闸门 + writable_roots） | ✅ | ❌ |
 | **L2 网络** | 默认断网，只走白名单 | ✅ 已实现（network_access=false, NET=deny/ask） | ✅ | ❌ |
 | **L3 凭据** | agent 的环境里没有钥匙 | ✅ 已实现并实测（`KEYLEN=0`） | ✅ | ✅（对"读环境变量"这一路） |
@@ -23,7 +23,11 @@
 - `sandbox/wsl-sandbox.ps1`：WSL2 一次性发行版（up/exec/down/status）
 - `sandbox/agent.wsb`：Windows Sandbox（只读挂载工作副本；需 Pro/Enterprise）
 
-**本机实测结论**（`oag sandbox plan`）
+**本机已落地**：账号 `agent_runner`（非管理员）+ `D:\work` 授权 Modify + 敏感路径 DENY；
+以该身份实测 9 项：工作区可写、敏感读写 / 系统目录 / 闸门篡改全部被拒。
+证据见 `docs/evidence/l0-acceptance-v2-20261111.txt`。
+
+**（历史）探测结论**（`oag sandbox plan`）
 
 | 方案 | 本机可用性 | 原因 |
 |---|---|---|

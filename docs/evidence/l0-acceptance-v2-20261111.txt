@@ -1,0 +1,15 @@
+﻿=== identity ===
+whoami: 完美\agent_runner
+isAdmin: False
+
+write D:\work\l0-ok.txt : ALLOWED
+read hermes_data\.env : BLOCKED :: UnauthorizedAccessException
+write C:\Users\p1553\l0-should-fail.txt : BLOCKED :: UnauthorizedAccessException
+list C:\Users\p1553\.ssh : BLOCKED :: UnauthorizedAccessException
+tamper gate hooks.json : BLOCKED :: UnauthorizedAccessException
+tamper gate script : BLOCKED :: UnauthorizedAccessException
+delete gate script : BLOCKED :: ArgumentException
+tamper policy.json : BLOCKED :: UnauthorizedAccessException
+write C:\Windows\x.txt : BLOCKED :: UnauthorizedAccessException
+
+summary: write D:\work\l0-ok.txt : ALLOWED | read hermes_data\.env : BLOCKED :: UnauthorizedAccessException | write C:\Users\p1553\l0-should-fail.txt : BLOCKED :: UnauthorizedAccessException | list C:\Users\p1553\.ssh : BLOCKED :: UnauthorizedAccessException | tamper gate hooks.json : BLOCKED :: UnauthorizedAccessException | tamper gate script : BLOCKED :: UnauthorizedAccessException | delete gate script : BLOCKED :: ArgumentException | tamper policy.json : BLOCKED :: UnauthorizedAccessException | write C:\Windows\x.txt : BLOCKED :: UnauthorizedAccessException

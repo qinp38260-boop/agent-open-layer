@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { judgeL0, parseEvidence } from "../src/core/l0-evidence.js";
+import { judgeL0, judgeGateTamper, parseEvidence } from "../src/core/l0-evidence.js";
 
 const GOOD = `=== identity ===
 whoami: PC\agent_runner
@@ -70,4 +70,32 @@ test("解析：BOM 和 CRLF 都能处理", () => {
   const r = judgeL0({ evidencePath: p, account: "agent_runner" });
   assert.equal(r.whoami, "PC\agent_runner");
   assert.equal(parseEvidence("\uFEFFx").whoami, "");
+});
+
+const TAMPER_LINES = [
+  "tamper gate hooks.json : BLOCKED",
+  "tamper gate script : BLOCKED",
+  "delete gate script : BLOCKED",
+  "tamper policy.json : BLOCKED",
+];
+const NL = String.fromCharCode(10);
+const TAMPER_OK = GOOD + TAMPER_LINES.join(NL) + NL;
+
+test("抗篡改：4 项篡改全被拒 → 通过", () => {
+  const r = judgeGateTamper({ evidencePath: tmp(TAMPER_OK) });
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.checked.length, 4);
+});
+
+test("抗篡改：有一项被改成功 → 不通过", () => {
+  const bad = TAMPER_OK.replace("tamper gate script : BLOCKED", "tamper gate script : ALLOWED");
+  const r = judgeGateTamper({ evidencePath: tmp(bad) });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /闸门被改成功/);
+});
+
+test("抗篡改：证据里没有篡改项 → unverified（不当通过）", () => {
+  const r = judgeGateTamper({ evidencePath: tmp(GOOD) });
+  assert.equal(r.ok, null);
+  assert.equal(r.status, "unverified");
 });

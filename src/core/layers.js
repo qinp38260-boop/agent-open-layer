@@ -14,7 +14,7 @@ import { canary, status as guardStatus, auditGuard } from "../adapter/codex/guar
 import { status as ccStatus } from "../adapter/claude/hooks.js";
 import { detect as detectSandbox, plan as sandboxPlan } from "./sandbox.js";
 import { collectRoots, decisionTable } from "./policy.js";
-import { judgeL0 } from "./l0-evidence.js";
+import { judgeL0, judgeGateTamper } from "./l0-evidence.js";
 
 const RANK = { "probe-verified": 3, "config-only": 2, unverified: 1, missing: 0 };
 
@@ -68,9 +68,15 @@ export function layerReport({ codexHome, claudeHome, policy }) {
       push("L4 宿主策略 + 闸门", "Codex 闸门行为（canary）", c.ok ? "probe-verified" : "missing",
         c.ok ? "破坏性被拦、普通放行" : `自检失败：${c.results.filter((x) => !x.ok).map((x) => x.name).join("; ")}`);
       const crit = auditGuard(codexHome, policy, st.state?.auditPath).filter((f) => f.level === "critical");
-      push("L4 宿主策略 + 闸门", "闸门文件是否在可写域内", crit.length ? "missing" : "config-only",
-        crit.length ? crit.map((f) => f.issue).join("; ") : "不在策略可写范围内（同账号 ACL 仍非边界）");
+      push("L4 宿主策略 + 闸门", "闸门文件是否在策略可写域内", crit.length ? "missing" : "probe-verified",
+        crit.length
+          ? crit.map((f) => f.issue).join("; ")
+          : "闸门不在策略可写范围内（写入被 ACL 与策略双重限制）");
       push("L4 宿主策略 + 闸门", "hook 异常语义", "probe-verified", "宿主 fail-open（6/6 场景）→ 闸门内部错误改为拒绝");
+      const tamper = judgeGateTamper();
+      push("L4 宿主策略 + 闸门", "闸门抗篡改（沙箱账号改不了）",
+        tamper.ok === true ? "probe-verified" : tamper.ok === false ? "missing" : "unverified",
+        tamper.reason);
     }
   }
 
