@@ -51,7 +51,7 @@ export function accountEnabled(account = DEFAULT_ACCOUNT) {
   return { exists: true, enabled: m ? /^yes$/i.test(txt.match(/(Yes|No)\s*$/m)?.[1] ?? "") : null };
 }
 
-export function judgeL0({ evidencePath = DEFAULT_EVIDENCE_PATH, account = DEFAULT_ACCOUNT } = {}) {
+export function judgeL0({ evidencePath = DEFAULT_EVIDENCE_PATH, account = DEFAULT_ACCOUNT, accountState } = {}) {
   if (!fs.existsSync(evidencePath)) {
     return { ok: false, status: "missing", reason: `证据文件不存在：${evidencePath}`, steps: [] };
   }
@@ -84,7 +84,8 @@ export function judgeL0({ evidencePath = DEFAULT_EVIDENCE_PATH, account = DEFAUL
   }
 
   // 证据可以是历史的，但账号必须现在还活着 —— 否则"隔离中"就是假话
-  const acct = accountEnabled(account);
+  // accountState 可注入：测试不该依赖本机是否真有这个账号（真停用后测试会假红）
+  const acct = accountState ?? accountEnabled(account);
   if (!acct.exists) {
     problems.push(`账号 ${account} 不存在：主体隔离当前不生效（历史证据保留）`);
   } else if (acct.enabled === false) {

@@ -218,6 +218,25 @@ icacls "D:\work\.codex\hooks.json" /inheritance:r ^
 
 域外核对：四个闸门文件字节数与 mtime 均未变（03:22:5x），越界文件均未出现。
 
+## 关停后：状态如实回落（不拿历史证据谎称隔离中）
+
+用户验完会要求停掉第二主体。`net user <acct> /active:no` **必须管理员**（非管理员 `错误 5`），
+而撤 ACL / 改闸门只要文件所有者权限 —— 所以助手把 ACL 与配置全留好，只把"停账号"一条交给用户。
+
+停用后 `oag layers` 的输出（实测）：
+
+```
+[L0 主体隔离]  🟡 独立账号 + 文件 ACL（config-only）
+     账号 agent_runner 已停用 → 隔离当前不生效（历史证据与 ACL 保留，启用即恢复）
+汇总：probe-verified 9 · config-only 3 · unverified 0 · missing 0
+```
+
+判据来自两处：证据文件（历史）+ `Get-LocalUser` 的 `Enabled`（当下）。
+账号不存在或已停用 → 一律不通过。恢复只需 `net user agent_runner /active:yes`，ACL/闸门/证据都在。
+
+**测试不该依赖本机账号状态**：`judgeL0` 的 `accountState` 参数可注入，
+否则账号一停用，正例测试就假红（实测踩到一次）。
+
 ## 启动自检（canary）
 
 ```bash
