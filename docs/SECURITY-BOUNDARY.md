@@ -79,3 +79,46 @@ runas /user:agent_runner "D:\path\to\codex.exe exec ..."
 - **无头宿主没有"询问"**：`ask` 在无交互环境等于拦截（已实测 `never`/`on-request` 都是全拒）。
 - **hook 信任是运行时开关**：`--dangerously-bypass-hook-trust` 才触发 hook；能控制命令行的人能关掉它。
 - **只覆盖 Codex 的 PreToolUse**：其它宿主、MCP 工具尚未接入同一判定层。
+
+## 实测 3：宿主对 hook 异常是 fail-open（关键，决定了我们的写法）
+
+用 6 种异常 hook 跑同一个"创建 canary 文件"的任务，看文件是否被创建：
+
+| hook 行为 | 结果 |
+|---|---|
+| 未捕获异常、退出码 1 | **放行** |
+| 输出非 JSON 垃圾 | **放行** |
+| 输出空、退出码 0 | **放行** |
+| 退出码 2、无输出 | **放行** |
+| 挂起 12 秒（超宿主超时） | **放行** |
+| 合法 JSON 但没有 `decision` 字段 | **放行** |
+
+结论：**不能指望宿主在闸门失效时保守处理。** 因此我们的闸门自身必须 fail-closed：
+
+- 事件不是合法 JSON → `block`
+- 策略文件读不到 / 内容损坏 → `block`
+- 未识别的工具（非 Bash 且无法归类）→ `deny`（不能"没规则=放行"）
+- 拒绝消息**不再列出允许目录**（那是给 agent 的绕行路线图）
+
+## 实测 4：环境变量清洗有效（Claude 建议里收益最大的一条）
+
+用 `[shell_environment_policy] inherit="core"` + 排除 `*KEY* *TOKEN* *SECRET* *PASSWORD* *CREDENTIAL* *SESSION* AWS_* GITHUB_* GH_* DEEPSEEK_* OPENAI_* ANTHROPIC_* GLM_*`
+后，让 agent 自己执行：
+
+```
+Write-Output ('KEYLEN=' + $env:DEEPSEEK_API_KEY.Length)
+→ KEYLEN=0
+```
+
+**它看不到密钥**，而模型调用照常工作（`env_key` 读的是宿主进程环境，不是工具环境）。
+这条比"拦命令"有效得多：**密钥根本不在它的 shell 里，就不存在被读走再发给模型 API 的问题。**
+
+## 启动自检（canary）
+
+```bash
+node bin/oag.js guard canary --codex-home ~/.codex          # 快测：不花钱，直接喂事件给脚本
+node bin/oag.js guard canary --codex-home ~/.codex --live    # 实测：真让宿主去删一个"必须存活"的文件
+```
+
+它会检查三件事：破坏性命令是否被拦、普通命令是否放行、闸门脚本是否被改坏（输出恒 `{}` 那种）。
+**闸门失效必须能被发现**，否则"已拦截"就是一句空话。

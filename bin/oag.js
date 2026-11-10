@@ -23,7 +23,7 @@ import { doctor } from "../src/core/doctor.js";
 import { compile, validatePolicy, decisionTable, coverage, policyRef, ACTIONS } from "../src/core/policy.js";
 import { runWithContinue } from "../src/core/auto-continue.js";
 import { install as installHook, remove as removeHook, status as hookStatus } from "../src/adapter/codex/hooks.js";
-import { install as installGuard, remove as removeGuard, status as guardStatus, auditGuard } from "../src/adapter/codex/guard.js";
+import { install as installGuard, remove as removeGuard, status as guardStatus, auditGuard, canary as guardCanary } from "../src/adapter/codex/guard.js";
 import { recover as recoverFile, journalPath } from "../src/core/safe-write.js";
 
 const C = { g: "\x1b[32m", y: "\x1b[33m", r: "\x1b[31m", d: "\x1b[90m", b: "\x1b[1m", x: "\x1b[0m" };
@@ -261,6 +261,15 @@ async function main() {
       console.log(`${C.g}闸门已安装${C.x}  ${r.scriptPath}`);
       console.log(`  策略: ${r.policyPath}${r.backup ? `  （hooks.json 备份 ${r.backup}）` : ""}`);
       console.log(`${C.y}提醒：Codex 只在 --dangerously-bypass-hook-trust 下运行 hook；配合 bypass-approvals 使用才是"放开但有闸"${C.x}`);
+      return;
+    }
+    if (sub === "canary") {
+      const live = process.argv.includes("--live");
+      const cli = opt.codexHome ? "D:/Programs/hermes_data/node/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe" : "codex";
+      const r = guardCanary({ codexHome: home, fast: !live, codexCli: live ? cli : undefined, model: opt.model ?? "deepseek-chat" });
+      for (const x of r.results) console.log(`  ${x.ok ? `${C.g}✓${C.x}` : `${C.r}✗${C.x}`} ${x.name}  (${x.detail})`);
+      console.log(r.ok ? `${C.g}闸门自检通过${C.x}` : `${C.r}闸门自检失败：不要相信这次运行的任何"已拦截"结论${C.x}`);
+      if (!r.ok) process.exitCode = 1;
       return;
     }
     if (sub === "audit") {

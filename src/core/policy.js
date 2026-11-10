@@ -157,6 +157,15 @@ export function compile(policy, hostId, caps = {}) {
     if (netD === "allow") toml["sandbox_workspace_write.network_access"] = "true";
     if (netD === "ask") out.notes.push("NET=ask 在 Codex 上落成 network_access=false（它只有开/关，没有「问我」）");
 
+    // 已实测接受：shell_environment_policy.inherit / exclude（--strict-config 不报错）
+    // 目的：让 agent 的 shell 里根本没有密钥 —— Claude 评审里"最便宜的收益"
+    toml["shell_environment_policy.inherit"] = '"core"';
+    toml["shell_environment_policy.exclude"] = JSON.stringify([
+      "*KEY*", "*TOKEN*", "*SECRET*", "*PASSWORD*", "*CREDENTIAL*", "*SESSION*",
+      "AWS_*", "GITHUB_*", "GH_*", "DEEPSEEK_*", "OPENAI_*", "ANTHROPIC_*", "GLM_*",
+    ]);
+    out.notes.push("已清洗工具环境变量（密钥类不进 agent 的 shell）");
+
     // 范围化放开：WRITE=allow 的 scope.paths 里取绝对路径 → writable_roots（这是"分开"的关键键）
     const roots = collectWritableRoots(policy);
     if (roots.length && toml.sandbox_mode === '"workspace-write"') {
