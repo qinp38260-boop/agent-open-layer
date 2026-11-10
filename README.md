@@ -2,189 +2,216 @@
 
 **Config-first permission & control layer for AI coding agents** — *not* a "make it unlimited" switch.
 
-Uses each host's *official* extension surfaces only — never patches `node_modules`, never rewrites host source.
-What it actually buys you: **explicit policy, audit trail, transactional rollback, and a pre-tool guardrail**.
-What it does **not** buy you: a security boundary against a determined agent — read
+Uses each host's **official extension surfaces only** (config layer / hooks / plugin API).
+**Zero patches to host source.** Nothing in `node_modules` is touched, no `.asar` is rewritten,
+no content anchors are replaced.
+
+What it buys you: **explicit policy, an action-level guard, audit with policy fingerprints,
+transactional rollback, and a pre-run/post-run supervisor**.
+What it does **not** buy you: a security boundary against a determined agent *by itself* —
+that requires a different security principal (L0). Read
 [docs/SECURITY-BOUNDARY.md](docs/SECURITY-BOUNDARY.md) before trusting it with anything you care about.
 
-> 分层设计见 [docs/LAYERS.md](docs/LAYERS.md)（L0 主体隔离 → L4 宿主策略 + 闸门，含每层完成状态与缺口）。
->
-> v0.2 ships one adapter (DeepSeek Harness). The host-agnostic adapter contract is v0.3 — see [ROADMAP.md](ROADMAP.md).
+> 中文详细说明（面向使用者，含每层怎么验、怎么停用与恢复）：[docs/GUIDE-zh.md](docs/GUIDE-zh.md)
+> 分层设计与完成状态：[docs/LAYERS.md](docs/LAYERS.md)
 
-## Why not a "purge"-style patcher
+## Status — what is actually verified (2026-11-11)
 
-| | typical `*-purge` patcher | agent-open-layer |
+Measured on Windows 11 with Codex CLI 0.167.0 / DeepSeek Harness 0.1.0-rc.7.
+"Verified" means a probe or a real side effect was observed, not that the code looks right.
+
+| Layer | What it does | Evidence |
 |---|---|---|
-| Mechanism | content-anchor text replacement inside host source | writes the host's own patch layer (`cordis.patch.yml`) |
-| Patches needed | dozens (58 in the one we evaluated) | **0 source patches** |
-| Host upgrade | anchors drift → manual re-anchoring (14 patches / 78 anchors drifted on 0.1.0) | **nothing to re-anchor** (config keys are the contract) |
-| Failure mode | host won't boot | config ignored / readable error |
-| Rollback | snapshot + revert | delete the managed block |
+| **L0** principal isolation | separate OS account + NTFS ACLs | **probe-verified** — 14 checks as `agent_runner`: workspace writable; `.env` read / user dir write / `.ssh` list / `C:\\Windows` write all BLOCKED |
+| **L0** gate tamper-resistance | agent cannot edit or delete its own gate | **probe-verified** — modify hooks.json / modify guard script / delete guard script / modify policy.json all BLOCKED |
+| **L0** gate still runnable | gate must be readable+executable *by that account* | **probe-verified** — `node oag-guard.mjs` runs as `agent_runner`, empty event → `{"decision":"block"}` |
+| **L1** write scoping | allowlist of writable roots, outside denied | **probe-verified** (8-action matrix) |
+| **L2** network | `NET` decision, no network in sandbox config | config-only (policy declaration) |
+| **L3** credentials | env scrubbing + credential-collection hard deny | **probe-verified** — agent self-test `KEYLEN=0`, model call still works; `git credential fill` / `.ssh` / DPAPI → deny |
+| **L4** host policy + guard | fail-closed guard, canary, watchdog | **probe-verified** — host fails open on 6/6 hook failures, so the guard closes on its own errors |
+| **L5** out-of-band supervision | baseline hashes before/after a run, taint detection | **probe-verified** — editing `package.json` → tainted, exit 11 |
+| **L6** promote-after-review | pre-run `git bundle` snapshot, human reviews diff | **probe-verified** — real repo rehearsal, bundle verifies, rollback works |
+
+Test suite: **125/125**.
+
+```bash
+node --test tests/*.test.mjs
+```
+
+## The one picture
+
+```
+        user's account (owns the gate files, can change policy)
+                    |
+        +-----------v------------+
+        |  policy.json (rules)   |  action x decision x scope
+        +-----------+------------+
+                    | compiled to host config + PreToolUse guard
+   +----------------v-----------------+
+   | sandbox account (L0)             |  separate principal -> cannot edit the gate
+   |   host process + guard           |  guard: fail-closed, audited
+   |   writable: D:\\work only         |
+   +----------------+-----------------+
+                    | artifacts (patches / diffs)
+        +-----------v------------+
+        | human reviews the diff |  L6: snapshot -> run -> taint check -> promote
+        +------------------------+
+```
+
+Key idea: **approval moves from "every tool call" to "artifact promotion"**. The agent works freely
+inside an isolated principal, and a human reviews what it actually produced.
 
 ## Install / use
 
 ```bash
-git clone https://github.com/<you>/agent-open-layer.git
+git clone https://github.com/qinp38260-boop/agent-open-layer.git
 cd agent-open-layer
-
-node bin/dsh-open.js status            # host version, installed?
-node bin/dsh-open.js plan              # dry-run: show the exact diff
-node bin/dsh-open.js apply --yes       # backup -> write managed block -> audit -> verify
-node bin/dsh-open.js verify            # re-read host config as proof
-node bin/dsh-open.js revert --yes      # remove managed block (your own entries untouched)
-node bin/dsh-open.js audit 20          # last 20 audit rows
-node --test tests/patchfile.test.mjs   # 5 unit tests
+node bin/oag.js status                  # host versions, which are configured
+node bin/oag.js plan --adapter codex    # what would change (dry run)
 ```
 
-On Windows the host CLI is a `.cmd`, so pass it explicitly:
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `oag status` | host versions, adapter readiness |
+| `oag plan --adapter <a>` | show the exact config delta, change nothing |
+| `oag apply --adapter <a>` | write the managed block + sidecar state (backed up first) |
+| `oag probe --adapter <a>` | **behavioral** probe: does the host really honor it (writes a canary, checks the side effect) |
+| `oag verify --adapter <a>` | verify current state matches the policy |
+| `oag recover --adapter <a>` | roll back the managed block from the transaction log |
+| `oag audit [--policy <p>]` | read the audit log, grouped by policy fingerprint |
+| `oag doctor` | environment/host sanity, with check marks |
+| `oag guard status\|install\|remove\|canary\|audit` | the PreToolUse action gate |
+| `oag run -- <cmd>` | supervisor: baseline -> run -> taint check (exit 0/10/11) |
+| `oag sandbox plan\|check` | detect what isolation this machine can do (account / WSL / container) |
+| `oag layers` | per-layer evidence level + **the weakest link** |
+
+## Policy DSL
+
+```json
+{
+  "version": 1,
+  "identity": { "stripHostIdentity": true },
+  "rules": [
+    { "action": "READ",             "decision": "allow", "scope": { "paths": ["workspace/**", "!workspace/.git/**"] } },
+    { "action": "WRITE",            "decision": "allow", "scope": { "paths": ["workspace/**"] } },
+    { "action": "EXEC_SAFE",        "decision": "allow", "scope": {} },
+    { "action": "EXEC_DESTRUCTIVE", "decision": "deny",  "scope": {} },
+    { "action": "EXEC_INSTALL",     "decision": "ask",   "scope": {} },
+    { "action": "EXEC_GIT_WRITE",   "decision": "ask",   "scope": {} },
+    { "action": "NET",              "decision": "ask",   "scope": { "domains": ["api.github.com"] } }
+  ],
+  "autoContinue": { "enabled": false, "maxContinues": 1 }
+}
+```
+
+Precedence: `deny > ask > allow`. Two profiles ship in `open/`: `policy.review.json` (read-only review)
+and `policy.dev.json` (writable workspace, everything else gated).
+
+**Intent, not syntax.** The guard normalizes every tool call to `{op, targets}` before judging, because
+blocking one spelling just teaches the agent another (`rm` -> `del` -> `Remove-Item` -> `apply_patch *** Delete File:`).
+Tests are equivalence assertions: every spelling of the same intent must get the same decision.
+
+## The gate (PreToolUse)
 
 ```bash
-node bin/dsh-open.js verify --dsh-cli "<path-to>/dsh.cmd"
+node bin/oag.js guard install --codex-home D:/work/.codex --policy D:/work/.codex/policy.json
+node bin/oag.js guard canary --codex-home D:/work/.codex --live   # proves it blocks a live host action
 ```
 
-## What v0.2 actually changes
+Properties that are non-negotiable, each backed by a measurement:
 
-```yaml
-- id: system-prompt
-  config:
-    includeHarnessIdentity: false   # drop "You are an AI agent powered by DeepSeek Harness."
-    persona: ""
+1. **fail-closed** — the host fails open on hook crashes/timeouts/garbage (6/6 measured), so bad JSON,
+   unreadable policy, timeout, empty event => `block`.
+2. **watchdog + input cap** — a slow guard is an absent guard.
+3. **audit outside the writable domain** — audit inside the agent's writable area is not audit.
+4. **the denial message never lists allowed paths** — that is a bypass roadmap for a goal-directed agent.
+5. **canary before every run** — version upgrades and missing hook-trust show up as *silent* failure.
+
+## L0: separate principal (the real boundary)
+
+Create the account once (admin), then everything else needs no elevation:
+
+```powershell
+net user agent_runner * /add
+mkdir D:\work
+icacls D:\work /grant "agent_runner:(OI)(CI)M"
+icacls "D:\Programs\hermes_data\.env" /deny "agent_runner:(F)"
 ```
 
-That's it. **One** documented key, affecting identity text only. Nothing about permissions.
+Gate files must be **readable + executable but not writable** by that account. Do **not** use
+`icacls /deny ...:(W)` — `(W)` includes `SYNCHRONIZE`, which is required to open a file at all, so the
+guard can no longer read its own policy and dies -> host fails open -> **protection silently disappears**.
+Correct form:
 
-### The lesson that shaped this repo
-
-v0.1 set `approval.policy: never` believing "never = stop asking". The host's own
-model-facing sentence says the opposite:
-
-> `NEVER_SENTENCE` = *"Approval prompts are disabled in this session: actions that require
-> approval are **rejected automatically** — do not request sandbox escalation."*
-
-So `never` is **fail-closed**. Shipping it as an "open mode" switch would have broken every
-action that needs permission. Hard rule in this repo:
-
-> Every switch's true semantics must be quoted from the host's own prompt/source in a comment
-> next to it. Enum names are not documentation.
-
-## Managed-block rules (why it cannot break your config)
-
-- Only touches lines between `# >>> agent-open-layer managed block` and `# <<< ...`
-- Empty file or `[]` → fill; your own entries present → append (never overwrite)
-- `apply` is **idempotent** (no stacked blocks)
-- Backs up to `profiles/<profile>/.dsh-open-backup/` before every write
-- `revert` restores `[]` when nothing else remains
-
-## Layout
-
-```
-bin/dsh-open.js            CLI: status/plan/apply/revert/verify/audit
-lib/host.js                host discovery: home / profiles / version
-lib/patchfile.js           managed block, backup, atomic write
-lib/audit.js               audit.jsonl (1MB rotation)
-open/dsh-open.patch.yml    the config layer (edit this to add switches)
-tests/patchfile.test.mjs   unit tests
-SECURITY.md                what it touches, fail-closed policy, disclosure
-ROADMAP.md                 adapter contract, per-host capability matrix (v0.3)
+```cmd
+icacls "D:\work\.codex\hooks.json" /inheritance:r ^
+  /grant "p1553:(F)" /grant "SYSTEM:(F)" /grant "Administrators:(F)" /grant "agent_runner:(RX)"
 ```
 
-## Safety posture
+The acceptance script must be ASCII + UTF-8 BOM (PowerShell 5.1 reads BOM-less UTF-8 as ANSI and breaks on CJK).
+Run it **as the sandbox account** and judge the file it wrote, from outside.
 
-- **fail-closed**: on any doubt the host keeps its conservative defaults
-- No auto-rewrite on startup; `apply` is always explicit
-- Audit + idempotent revert + pre-write backup
-- No bundled asset packs / skill packs / "redteam" content
-- Read [SECURITY.md](SECURITY.md) before using it on a machine you care about
+Stop / resume (state is a fact to be judged, never remembered):
 
-## v3 adapter layer (multi-host)
+```powershell
+net user agent_runner /active:no
+net user agent_runner /active:yes
+```
 
-`bin/oag.js` drives any registered host adapter. Shared safety work (lock → journal → race check →
-backup → atomic write → read-back verify → restore) lives in `src/core/safe-write.js`; an adapter only
-answers three things: *where is the host / which version*, *what text should be written*, *how to verify
-the host actually accepted it*.
+`/active:no` needs admin (non-admin => system error 5); revoking ACLs only needs file ownership.
+After stopping, `oag layers` reports L0 as `config-only`: *"account disabled -> isolation not in effect
+(evidence and ACLs kept; enabling restores it)"*. It will not keep claiming "isolated".
+
+## L6: promote after review
 
 ```bash
-node bin/oag.js adapters                       # dsh, codex, claude-code
-node bin/oag.js status                         # host + version + capabilities
-node bin/oag.js plan                           # dry-run diff
-node bin/oag.js apply --yes                    # locked, journalled, verified, audited
-node bin/oag.js verify                         # 0 pass / 1 fail / 2 unverified
-node bin/oag.js recover --yes                  # restore from the journal's backup
-node bin/oag.js audit 20
+oag run --cwd D:/work/repo --codex-home D:/work/.codex \
+        --policy D:/work/.codex/policy.json \
+        --snapshot D:/work/repo --fail-on-taint -- <command>
 ```
 
-Per-host mechanics (why they differ):
+Exit codes: `0` clean / `10` canary failed (never started) / `11` tainted.
+A rehearsal caught `package.json` -> `{"scripts":{"postinstall":"echo pwned"}}` —
+writes look innocent, the diff does not lie. See [docs/L6-WORKFLOW.md](docs/L6-WORKFLOW.md).
 
-| host | format | mechanism |
-|---|---|---|
-| DSH | YAML | line-anchored managed block (`# >>> … <<<`) |
-| Codex | TOML | **key merge** + sidecar state file for safe `revert` |
-| Claude Code | JSON | **namespace object** (`_openAgentGate`) — JSON has no comments, so no markers |
+## Measured host facts (do not re-derive these the hard way)
 
-`probe` asks the **host itself** to validate the config (not just "is the text there"):
+| Fact | Measurement |
+|---|---|
+| Windows `workspace-write` + `never` | degrades to **read-only**, even inside the workspace |
+| Windows `danger-full-access` | writes **outside** the workspace too -> no native OS boundary on Windows |
+| headless approvals | `never` and `on-request` both mean "deny everything" (nobody to ask) |
+| host hook failures | **fail-open 6/6**: crash / garbage / empty / exit2 / timeout / no decision |
+| env scrubbing | `shell_environment_policy.inherit="core"` + excludes => agent sees `KEYLEN=0`, model still works |
+| `matcher:"*"` in hooks.json | matches nothing; use `matcher:""` |
+| hook trust | requires `--dangerously-bypass-hook-trust` (or the official trust flow), otherwise silently skipped |
 
-```bash
-node bin/oag.js probe --adapter codex --cli <path-to>/codex.cmd
-#   ✓ schema-accepted   宿主 --strict-config 未报未知字段
-#   ✓ host-ran          turn.completed + 有回复
-```
+## Exit codes
 
-If no `DEEPSEEK_API_KEY` is available it returns `skipped` (exit 2) — never a pass.
+`0` ok · `1` verification failed · `2` verification could not run · `3` host capability missing ·
+`4` race · `5` IO · `6` marker corrupted · `7` rollback failed · `10` canary failed · `11` tainted.
 
-Exit codes: `0` ok · `1` verify failed · `2` unverified/needs `--yes` · `3` host/version · `4` race/lock ·
-`5` IO · `6` recover required / marker corrupt · `7` rollback failed.
+## Evidence and docs
 
-## Policy engine + doctor (v4)
+- [docs/GUIDE-zh.md](docs/GUIDE-zh.md) — 中文详细说明（推荐从这里开始）
+- [docs/LAYERS.md](docs/LAYERS.md) — per-layer status and gaps
+- [docs/SECURITY-BOUNDARY.md](docs/SECURITY-BOUNDARY.md) — what was measured, including the failures
+- [docs/PROBES.md](docs/PROBES.md) — probe matrix
+- [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) — acceptance standard (negative control first, rule of three)
+- [docs/evidence/](docs/evidence/) — raw acceptance output produced by the sandbox account
 
-Describe *intent*, not config snippets; the engine compiles it per host and **refuses to pretend**:
+## What this does NOT do (read before trusting it)
 
-```bash
-node bin/oag.js policy                       # 预览：决策表 + 每宿主"能落地/做不到"
-node bin/oag.js policy --require-complete    # 有任何 unsupported 就 exit 2（CI 用）
-node bin/oag.js apply --policy open/policy.example.json --yes
-node bin/oag.js doctor                       # 跨宿主自检（宿主/配置可解析/残留/审计）
-node bin/oag.js doctor --json                # 机器可读
-node bin/oag.js continue --adapter codex --max 1 --prompt "..."   # 自动续跑（wrapper，硬上限 10）
-node bin/oag.js probe --adapter dsh          # 行为探针（金丝雀；环境不满足则 skipped）
-```
-
-`continue` uses the host's own `exec resume <session>` (Codex verified); it is a **wrapper** because
-no host exposes an "auto-continue" config key. Native alternative (also verified):
-
-```bash
-node bin/oag.js hook install --codex-home ~/.codex --max 2   # Stop hook -> decision:block
-node bin/oag.js hook status | remove
-```
-Codex only runs hooks that are **trusted** — invoke with `--dangerously-bypass-hook-trust` or complete
-its trust flow. The generated hook refuses to loop (`stop_hook_active`) and counts per session. `probe` classifies by S3 side-effect > S2 denial text >
-`inconclusive` — never a pass without evidence. Multi-file changes go through `src/core/txn.js`
-(all-or-nothing, with its own journal and recovery).
-
-Policy shape (`open/policy.example.json`): `{version, identity, rules[{action,decision,scope}], autoContinue}`.
-Precedence is `deny > ask > allow`, independent of declaration order. Actions: `READ / WRITE /
-EXEC_SAFE / EXEC_DESTRUCTIVE / EXEC_INSTALL / EXEC_GIT_WRITE / NET`.
-
-Compilation is capability-aware — e.g. Codex gets `approval_policy="never"` for `EXEC_* = allow`,
-`sandbox_mode="read-only"` for `WRITE = deny`; DSH only gets `identity` because it has no verified
-relaxation key (`approval.policy=never` means **auto-reject**, not "open"). Everything unlandable is
-reported as `unsupported` with a reason. See [docs/ARCH_v4.md](docs/ARCH_v4.md).
-
-## Second reviewer (cheap)
-
-`scripts/codex-review.sh` drives an external agent harness (Codex CLI) with a third-party
-OpenAI-compatible model to review your own code — good for finding real bugs without
-spending review-model quota:
-
-```bash
-./scripts/codex-review.sh                        # review uncommitted changes
-./scripts/codex-review.sh --files "src/a.js lib/b.js" --max 5
-./scripts/codex-review.sh --base main --focus correctness --strict
-```
-
-Requires `codex` on PATH, `DEEPSEEK_API_KEY` in env or `D:/Programs/hermes_data/.env`,
-and `--approve-for-me` semantics (verified on codex-cli 0.167.0). Findings are **candidates** —
-verify each against the code and add a regression test per fix.
+- It does not make a host "unlimited" or "jailbroken".
+- Without L0 it is **a tripwire, not a boundary**: same principal means the agent can edit the gate.
+  (Measured: with a single account it did remove the deny ACE, edit the hook, and put it back.)
+- Indirect execution (Makefile, `npm run`, `conftest.py`) is only partially covered by the monitored set.
+- Network policy at L2 is a declaration; enforcement depends on the host's sandbox.
+- The Claude Code adapter is derived from package strings (no live Claude CLI on the test machine) —
+  treat it as `config-only` until you probe it yourself.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
