@@ -52,12 +52,30 @@ function fragmentText(opt) {
   return text;
 }
 
+const PROFILE_RE = /^[A-Za-z0-9._-]+$/;
+
 function verify(opt, home) {
   const cli = opt.dshCli || process.env.DSH_OPEN_CLI || "dsh";
+  // 修 #1（codex 审查）：profile 会进入命令行，必须白名单校验，否则 cmd 注入
+  if (!PROFILE_RE.test(opt.profile)) {
+    return { ok: false, skipped: true, reason: `profile 名不合法（只允许 字母数字._-）：${String(opt.profile).slice(0, 40)}` };
+  }
+  // 修 #2：dsh 本身没有 --home，自定义 home 无法读回 → 明确"不可验证"，绝不假装通过
+  const defaultHome = dshHome(null);
+  if (path.resolve(home) !== path.resolve(defaultHome)) {
+    return { ok: false, skipped: true, reason: `--home 不是宿主默认目录，dsh 无法读回，拒绝给出验证结论` };
+  }
+  const custom = Boolean(opt.dshCli || process.env.DSH_OPEN_CLI);
+  if (custom) {
+    // 修 #1 续：自定义 CLI 路径必须真实存在，且不含 shell 元字符
+    if (!fs.existsSync(cli)) return { ok: false, skipped: true, reason: `--dsh-cli 不存在：${cli}` };
+    if (/["&|<>^]/.test(cli)) return { ok: false, skipped: true, reason: `--dsh-cli 含非法字符` };
+  }
+  const isCmdScript = /\.(cmd|bat)$/i.test(cli);
   const run = () => {
     const out = execFileSync(cli, ["--profile", opt.profile, "--dump-config"], {
       encoding: "utf8",
-      shell: process.platform === "win32",
+      shell: isCmdScript, // 只有 .cmd/.bat 才需要 shell；profile 已白名单校验
       timeout: 120000,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -159,7 +177,9 @@ function main() {
   if (cmd === "verify") {
     const v = verify(opt, home);
     if (v.skipped) {
-      console.log(`${C.y}跳过：${v.reason}${C.x}`);
+      // 修 #3（codex 审查）：跳过 ≠ 通过，必须给非零退出码，否则 CI 把未验证当成功
+      console.log(`${C.y}跳过（未验证）：${v.reason}${C.x}`);
+      process.exitCode = 2;
       return;
     }
     console.log(`${C.b}dsh-open verify${C.x}  宿主=${host.version}`);

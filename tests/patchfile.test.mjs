@@ -60,3 +60,18 @@ test("revert 后回到空数组，且保留用户内容", () => {
   assert.ok(without.includes("我自己的东西"));
   assert.ok(!without.includes("policy: never"));
 });
+
+// —— 回归：codex 审查发现的 3 类问题 ——
+test("marker 只在整行出现时才处理（用户正文里的同名字样不误删）", () => {
+  const block = blockBody(FRAG);
+  const cur = `# 说明: 提到 ${BEGIN} 这种字样不应被当成块\n[]\n`;
+  const { next } = compose(cur, block);
+  assert.ok(next.includes("提到"));
+  assert.ok(next.includes("policy: never"));
+});
+
+test("BEGIN 有但 END 缺失 → 抛 UNTERMINATED_BLOCK，不叠第二个块", () => {
+  const block = blockBody(FRAG);
+  const broken = `${BEGIN}  dsh-open:v1\n- id: approval\n`;
+  assert.throws(() => compose(broken, block), (e) => e.code === "UNTERMINATED_BLOCK");
+});
