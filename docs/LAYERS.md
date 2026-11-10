@@ -12,6 +12,8 @@
 | **L2 网络** | 默认断网，只走白名单 | ✅ 已实现（network_access=false, NET=deny/ask） | ✅ | ❌ |
 | **L3 凭据** | agent 的环境里没有钥匙 | ✅ 已实现并实测（`KEYLEN=0`） | ✅ | ✅（对"读环境变量"这一路） |
 | **L4 宿主策略 + DSL + 闸门** | 统一策略入口 + 即时拦截 + 审计 | ✅ 已实现（Codex 实测 / Claude 包内取证） | ✅ | ❌ |
+| **L5 域外监督** | 运行前后比对闸门/配置/持久化点，变化标 tainted | ✅ 已实现并实测（`oag run`） | ✅ | 检测（非阻止） |
+| **L6 产物晋升** | 只在 clone 工作，产物经 diff 审查才进真实仓库 | ⚠️ 快照能力就绪，流程未演练 | ✅ | ✅ |
 
 ## L0 主体隔离
 
@@ -85,6 +87,16 @@ shell_environment_policy.exclude = ["*KEY*","*TOKEN*","*SECRET*","*PASSWORD*","*
 | L2 | 联网不受限 | 默认断网 |
 | L3 | 不处理（agent 能看到宿主环境） | 环境变量清洗（实测 KEYLEN=0） |
 | L4 | 内容锚点补丁（升级即漂移） | 官方配置 + hook（升级不返工，能力缺失明说） |
+
+## L4 加固项（对应宿主 fail-open）
+
+- 看门狗 4s（短于宿主超时）、输入上限 256KB、最外层 try/catch
+- 空事件 → 拒绝；未捕获异常 → 拒绝（Claude 侧 `exit 2`）
+- 良性工具白名单（避免"未知工具→deny"误杀）
+- 能力矩阵：`capability(host, key, os)` → effective / ineffective-here / unverified / unsupported
+  （Windows 上 `workspace-write` 标 `ineffective-here`）
+- 证据等级：`oag layers` 输出 probe-verified / config-only / unverified / missing 与"最弱一环"
+- 适配层数据化：`adapters/<host>.json`（工具名→op、字段名、hook schema、退出码语义、trust 开关）
 
 ## 下一步（按收益排序）
 

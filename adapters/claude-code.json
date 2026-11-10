@@ -1,0 +1,27 @@
+{
+  "host": "claude-code",
+  "host_note": "@anthropic-ai/claude-code 2.1.322（仅包内取证，本机无 CLI）",
+  "hook_events": ["PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "SubagentStop", "PreCompact", "Notification", "PermissionRequest"],
+  "hook_config": "~/.claude/settings.json → hooks.PreToolUse[{matcher, hooks:[{type:command, command, timeout}]}]",
+  "exit_code_semantics": "exit 2 = 阻断；其它非零（含未捕获异常 exit 1）= 非阻断 = fail-open",
+  "deny_output": {
+    "new": { "hookSpecificOutput": { "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "string" } },
+    "legacy": { "decision": "block", "reason": "string" }
+  },
+  "tool_mapping": {
+    "Write|Edit|MultiEdit|NotebookEdit": "write（字段 file_path / notebook_path）",
+    "Read": "read（file_path）",
+    "Glob": "read",
+    "Grep": "read（能读内容）",
+    "WebFetch|WebSearch": "net（url）",
+    "Bash|Shell": "按命令意图归一（command）",
+    "Task": "spawn_host（子 agent）",
+    "TodoWrite|TodoRead|ExitPlanMode|NotebookRead|TaskList|TaskGet": "良性白名单，放行"
+  },
+  "evidence": {
+    "settings_json_permissions": "package-level (sdk-tools.d.ts + binary strings)",
+    "hook_schema": "package-level（未真机验证；exit 2 语义来自第三方评审，未经我复核）",
+    "end_to_end": "unverified"
+  },
+  "how_to_verify_when_cli_available": "用 ANTHROPIC_BASE_URL 指向兼容端点，装 CLI 后跑 oag guard canary --adapter claude-code --live"
+}

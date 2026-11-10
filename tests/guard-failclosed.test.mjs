@@ -48,7 +48,7 @@ test("fail-closed：事件不是合法 JSON → 必须 block", () => {
   const { script } = installTemp();
   const out = feed(script, "{{{not json");
   assert.equal(out.decision, "block", JSON.stringify(out));
-  assert.match(out.reason, /自检失败/);
+  assert.match(out.reason, /拒绝|自检失败/);
 });
 
 test("fail-closed：策略文件被删 → 必须 block（不能当放行）", () => {

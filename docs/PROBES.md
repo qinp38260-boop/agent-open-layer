@@ -1,6 +1,6 @@
 # PROBES —— 本机实测能力矩阵
 
-> 生成时间：2026-11-10 18:39:05 · 生成命令：`node scripts/probe-matrix.mjs`
+> 生成时间：2026-11-10 19:07:58 · 生成命令：`node scripts/probe-matrix.mjs`
 > 证据等级：✅ 本机实测/源码级 · ⚠️ 仅文档 · U 查不到口子（不实现、不伪装）
 > **重跑即刷新**：升级宿主后跑同一条命令，与本文件 diff 就是漂移。
 
@@ -14,6 +14,7 @@
 | codex | 0.167.0 | 事件流结构（--json） | thread.started / turn.started / item.completed / turn.completed；item: agent_message\|command_execution\|error；**无 approval 字段** | `codex exec --json` | ✅ 本机实测 |
 | codex | 0.167.0 | 被 policy 拒绝的表现 | 仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令 | `codex exec -s read-only` | ✅ 本机实测 |
 | codex | 0.167.0 | Stop hook（原生自动续跑） | 存在：hooks.json → decision:block 可强制再跑一轮；需 hook 受信任 | `实测 hooks.json + --dangerously-bypass-hook-trust` | ✅ 本机实测 |
+| codex | 0.167.0 | workspace-write 在 Windows 的实际效果 | 退化为只读：工作区内写也被拒；域外观测=文件不存在 + stderr Rejected | `文件系统 + stderr 双证` | ✅ 本机实测 |
 | codex | 0.167.0 | hook 异常时宿主的行为 | fail-open：崩溃/乱输出/空输出/退出码2/超时/缺 decision 六种情况全部放行 | `6 场景实测` | ✅ 本机实测 |
 | codex | 0.167.0 | 环境变量能否清洗 | 能：shell_environment_policy.inherit+exclude 后 agent 自测 KEYLEN=0，模型调用正常 | `实机运行` | ✅ 本机实测 |
 | codex | 0.167.0 | PreToolUse hook 能否否决动作 | 能：返回 decision:block 后文件未被创建，stderr 出现 Command blocked by PreToolUse hook | `实测 8 动作矩阵` | ✅ 本机实测 |

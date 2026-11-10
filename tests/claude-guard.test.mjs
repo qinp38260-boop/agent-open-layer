@@ -32,11 +32,13 @@ function setup() {
 
 const run = (script, ev) => {
   const r = spawnSync(process.execPath, [script], { input: JSON.stringify(ev), encoding: "utf8", timeout: 15000 });
+  let out = {};
   try {
-    return JSON.parse(r.stdout || "{}");
+    out = JSON.parse(r.stdout || "{}");
   } catch {
-    return { decision: "invalid" };
+    out = { decision: "invalid" };
   }
+  return { ...out, exitCode: r.status, raw: r.stdout };
 };
 
 test("Bash 破坏性 → block；普通 → allow", () => {
@@ -94,4 +96,41 @@ test("安装/状态/卸载：保留用户已有 hook", () => {
   cfg = JSON.parse(fs.readFileSync(settings, "utf8"));
   assert.equal(cfg.hooks.PreToolUse.length, 1);
   assert.equal(status(home).installed, false);
+});
+
+test("拒绝时必须 exit 2 + 新格式（Claude 只有 exit 2 算阻断，其它非零是 fail-open）", () => {
+  const { script } = setup();
+  const out = run(script, { tool_name: "Bash", tool_input: { command: "rm -rf D:/w/x" }, cwd: "D:/w" });
+  assert.equal(out.exitCode, 2, "必须 exit 2");
+  assert.equal(out.hookSpecificOutput?.permissionDecision, "deny", "必须用新格式");
+  assert.ok(out.hookSpecificOutput?.permissionDecisionReason, "必须带原因");
+  assert.equal(out.decision, "block", "旧格式同时保留");
+});
+
+test("放行时必须 exit 0 且不输出 allow", () => {
+  const { script } = setup();
+  const out = run(script, { tool_name: "Bash", tool_input: { command: "echo hi" }, cwd: "D:/w" });
+  assert.equal(out.exitCode, 0);
+  assert.equal(out.decision, undefined, "不得输出 allow/decision");
+});
+
+test("良性工具放行（避免未知工具 deny 误杀）", () => {
+  const { script } = setup();
+  for (const t of ["TodoWrite", "ExitPlanMode"]) {
+    const out = run(script, { tool_name: t, tool_input: {}, cwd: "D:/w" });
+    assert.equal(out.exitCode, 0, t);
+    assert.equal(out.decision, undefined, t);
+  }
+});
+
+test("Task（子 agent）= spawn_host → 拒绝", () => {
+  const { script } = setup();
+  const out = run(script, { tool_name: "Task", tool_input: {}, cwd: "D:/w" });
+  assert.equal(out.exitCode, 2);
+});
+
+test("空输入 → 拒绝（exit 2）", () => {
+  const { script } = setup();
+  const r = spawnSync(process.execPath, [script], { input: "", encoding: "utf8", timeout: 15000 });
+  assert.equal(r.status, 2);
 });

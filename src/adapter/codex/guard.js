@@ -144,16 +144,45 @@ function wasDenied(targets) {
   } catch { return false; }
 }
 
+const MAX_INPUT = 256 * 1024;
 let input = "";
-process.stdin.on("data", (d) => (input += d));
+let finished = false;
+function finishBlock(why) {
+  if (finished) return;
+  finished = true;
+  process.stdout.write(JSON.stringify({
+    decision: "block",
+    reason: "OAG_GUARD 拒绝（" + why + "）：宿主对 hook 异常是 fail-open（已实测），此处保守拒绝。",
+  }));
+}
+// 看门狗：宿主超时后是 fail-open，所以必须在它之前自己拒绝
+const watchdog = setTimeout(() => {
+  finishBlock("闸门处理超时（看门狗）");
+  process.exit(0);
+}, 4000);
+
+process.stdin.on("data", (d) => {
+  input += d;
+  if (input.length > MAX_INPUT) {
+    clearTimeout(watchdog);
+    finishBlock("输入超过上限 " + MAX_INPUT + " 字节");
+    process.exit(0);
+  }
+});
 process.stdin.on("end", () => {
+  clearTimeout(watchdog);
+  try {
+    run();
+  } catch (e) {
+    finishBlock("内部异常：" + String((e && e.message) || e));
+  }
+});
+
+function run() {
   let ev = {};
-  const failClosed = (why) =>
-    process.stdout.write(JSON.stringify({
-      decision: "block",
-      reason: "OAG_GUARD 自检失败（" + why + "）：宿主对 hook 异常是 fail-open（已实测），因此这里必须保守拒绝。",
-    }));
-  try { ev = JSON.parse(input || "{}"); } catch { return failClosed("事件不是合法 JSON"); }
+  const failClosed = finishBlock;
+  if (!input.trim()) return failClosed("事件为空（宿主没有传 payload）");
+  try { ev = JSON.parse(input); } catch { return failClosed("事件不是合法 JSON"); }
   let policy = { rules: [] };
   try { policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8")); } catch { return failClosed("策略文件读不到或不是合法 JSON：" + POLICY_PATH); }
   const cmd = String(ev.tool_input?.command ?? "");
@@ -189,8 +218,8 @@ process.stdin.on("end", () => {
     }));
     return;
   }
-  process.stdout.write("{}");
-});
+  if (!finished) { finished = true; process.stdout.write("{}"); }
+}
 `;
 }
 

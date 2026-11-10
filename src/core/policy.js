@@ -111,11 +111,59 @@ export function collectReadableRoots(policy) {
   return collectRoots(policy, "READ");
 }
 
+/**
+ * host × OS 能力矩阵（Claude 意见："编得出来但在此环境无效"比 unsupported 更糟）
+ * 三态：
+ *   effective        —— 在此宿主 + 此 OS 上确有行为效果（有实测支撑）
+ *   ineffective-here —— 键存在，但在当前 OS 上退化/无效（例如 Windows 的 workspace-write）
+ *   unsupported      —— 宿主的扩展面里没有对应键
+ */
+export function capability(hostId, key, os = process.platform) {
+  if (hostId === "codex") {
+    if (key === "sandbox_mode.workspace-write" && os === "win32") {
+      return {
+        status: "ineffective-here",
+        why: "已实测：Windows 上 workspace-write 退化为只读（工作区内写也被拒）；宿主的 seatbelt/landlock 类沙箱在 Windows 无对应实现",
+      };
+    }
+    if (key === "sandbox_mode.danger-full-access") {
+      return { status: "effective", why: "已实测：可写任意位置（等于无边界）" };
+    }
+    if (key === "sandbox_workspace_write.network_access") {
+      return { status: "effective", why: "已实测：宿主接受该键（严格配置校验无报错）" };
+    }
+    if (key === "shell_environment_policy") {
+      return { status: "effective", why: "已实测：agent 自测 KEYLEN=0（密钥不在工具环境），模型调用正常" };
+    }
+    if (key === "pretooluse_hook") {
+      return { status: "effective", why: "已实测：可真实否决动作；但宿主对 hook 异常 fail-open（6 场景），闸门必须自身 fail-closed" };
+    }
+  }
+  if (hostId === "claude-code") {
+    if (key === "permissions") return { status: "effective", why: "包内取证（settings.json → permissions.{allow,deny,ask}）" };
+    if (key === "pretooluse_hook") {
+      return { status: "unverified", why: "包内取证：hooks.PreToolUse 存在；本机无 CLI，未真机验证；据 Claude 评述 exit 2 才是阻断" };
+    }
+  }
+  if (hostId === "dsh") {
+    if (key === "identity") return { status: "effective", why: "已实测：cordis.patch.yml 的 system-prompt 段被宿主接受" };
+    if (key === "pretooluse_hook") return { status: "unsupported", why: "DSH 无 PreToolUse hook 入口" };
+  }
+  return { status: "unsupported", why: "宿主扩展面无此键" };
+}
+
 export function compile(policy, hostId, caps = {}) {
   validatePolicy(policy);
   const table = decisionTable(policy);
   const unsupported = [];
-  const out = { host: hostId, payload: null, unsupported, notes: [] };
+  const os = caps.os ?? process.platform;
+  const out = { host: hostId, payload: null, unsupported, notes: [], capabilities: [] };
+  const cap = (key) => {
+    const c = capability(hostId, key, os);
+    out.capabilities.push({ key, ...c });
+    if (c.status === "ineffective-here") out.notes.push(`⚠ ${key} 在此环境无效：${c.why}`);
+    return c;
+  };
   const want = (a) => table[a] ?? null;
 
   if (hostId === "dsh") {
@@ -150,7 +198,14 @@ export function compile(policy, hostId, caps = {}) {
     else if (execDecisions.includes("allow")) toml.approval_policy = '"never"';
     else if (execDecisions.every((d) => d === "deny")) unsupported.push({ action: "EXEC_*", decision: "deny", reason: "Codex 没有「一律拒绝执行」的键；只能靠 sandbox read-only + 不给 bypass" });
     if (want("READ") === "deny" || want("WRITE") === "deny") toml.sandbox_mode = '"read-only"';
-    if (want("READ") === "allow" && want("WRITE") === "allow") toml.sandbox_mode = '"workspace-write"';
+    if (want("READ") === "allow" && want("WRITE") === "allow") {
+      const c = cap("sandbox_mode.workspace-write");
+      // 在此环境无效时仍然发出，但明确标注；调用方可用 --require-effective 拒绝继续
+      toml.sandbox_mode = '"workspace-write"';
+      if (c.status === "ineffective-here") {
+        out.notes.push("该键在 Windows 上不产生限制效果：实际隔离必须依赖主体隔离（L0）或闸门");
+      }
+    }
     // 已实测接受（--strict-config 无报错）：[sandbox_workspace_write] network_access / writable_roots
     const netD = want("NET");
     if (netD === "deny" || netD === "ask") toml["sandbox_workspace_write.network_access"] = "false";

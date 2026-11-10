@@ -129,6 +129,33 @@ Write-Output ('KEYLEN=' + $env:DEEPSEEK_API_KEY.Length)
 `.envrc`、`core.hooksPath` 等文件时，审计里打 `persistence: true`。
 原因：这些文件由**你本人日后用你的权限**触发，闸门管不到那一刻，只能事后可查。
 
+## 实测 6：闸门自身的加固（对应宿主的 fail-open）
+
+因为宿主在 hook 异常时全部放行（实测 3），闸门必须自己保证"任何异常都变成拒绝"：
+
+| 加固项 | 做法 |
+|---|---|
+| 看门狗 | 4 秒定时器，到点主动输出 block 并退出（短于宿主超时，避免被宿主先杀掉而放行） |
+| 输入上限 | 单次事件 > 256 KB → 直接拒绝 |
+| 最外层 try/catch | 任何未捕获异常 → 拒绝（Claude 侧同时 `exit 2`，因为 Claude 只有 exit 2 算阻断） |
+| 空事件 | 宿主没传 payload → 拒绝（原先会被当成"没有命令"放行） |
+| 良性工具白名单 | `TodoWrite/TodoRead/ExitPlanMode/NotebookRead/TaskList/TaskGet` 放行，避免"未知工具→deny"误杀 |
+
+## 实测 7：域外监督（oag run）
+
+`oag run -- <命令>`：运行前记基线哈希（闸门脚本、hooks.json、宿主配置、策略、`.git/hooks`、
+`.git/config`、`package.json`、`.vscode/tasks.json`、`.github/workflows`、`.envrc`），
+运行后比对，变了就标 `tainted`：
+
+```
+oag run --cwd ... --codex-home ... --policy ... --fail-on-taint -- <命令>
+  ✓ 被监控文件无变化            → 退出码 0
+  ⚠ tainted：[modified] ...package.json → 退出码 11
+  canary 未通过                 → 不开跑，退出码 10
+```
+
+这套东西解决的是"配置即代码 / 延迟执行"：**事前拦截不确定，事后 diff 是确定的。**
+
 ## 启动自检（canary）
 
 ```bash

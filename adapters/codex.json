@@ -1,0 +1,28 @@
+{
+  "host": "codex",
+  "host_note": "codex-cli 0.167.0（本机实测）",
+  "hook_events": ["PreToolUse", "Stop"],
+  "hook_config": "$CODEX_HOME/hooks.json",
+  "hook_requires_trust": true,
+  "hook_trust_flag": "--dangerously-bypass-hook-trust",
+  "hook_failure_mode": "fail-open（实测 6/6 场景放行：崩溃/乱输出/空输出/退出码2/超时/缺 decision）",
+  "tool_mapping": {
+    "Bash": "按命令意图归一（write/delete/net/install/git/… 全走这里，apply_patch 也以 shell 命令出现）"
+  },
+  "event_fields": ["session_id", "turn_id", "transcript_path", "cwd", "hook_event_name", "model", "permission_mode", "tool_name", "tool_input", "tool_use_id"],
+  "deny_output": { "decision": "block", "reason": "string" },
+  "config_keys": {
+    "approval_policy": "never|on-request（无头下两者都等于拒绝）",
+    "sandbox_mode": "read-only|workspace-write|danger-full-access",
+    "sandbox_workspace_write.network_access": "boolean",
+    "sandbox_workspace_write.writable_roots": "string[]",
+    "shell_environment_policy.inherit": "\"core\"",
+    "shell_environment_policy.exclude": "glob[]"
+  },
+  "evidence": {
+    "hook_blocks_action": "probe-verified",
+    "hook_failure_mode": "probe-verified",
+    "env_sanitization": "probe-verified (agent 自测 KEYLEN=0，模型调用正常)",
+    "workspace_write_on_windows": "probe-verified (退化为只读；文件不存在 + 宿主 stderr Rejected)"
+  }
+}

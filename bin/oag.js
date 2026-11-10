@@ -23,6 +23,8 @@ import { doctor } from "../src/core/doctor.js";
 import { compile, validatePolicy, decisionTable, coverage, policyRef, ACTIONS } from "../src/core/policy.js";
 import { runWithContinue } from "../src/core/auto-continue.js";
 import { install as installHook, remove as removeHook, status as hookStatus } from "../src/adapter/codex/hooks.js";
+import { layerReport, renderLayerReport } from "../src/core/layers.js";
+import { watchList, runWatched } from "../src/core/run-wrapper.js";
 import { detect as detectSandbox, plan as sandboxPlan, renderPlan } from "../src/core/sandbox.js";
 import { install as ccInstall, status as ccStatus, remove as ccRemove } from "../src/adapter/claude/hooks.js";
 import { install as installGuard, remove as removeGuard, status as guardStatus, auditGuard, canary as guardCanary } from "../src/adapter/codex/guard.js";
@@ -39,7 +41,7 @@ const DEFAULT_PAYLOAD = {
 function argv() {
   const a = process.argv.slice(2);
   const cmd = a[0] ?? "status";
-  const opt = { yes: false, profile: "web", adapter: null, payload: null, policy: null, home: null, cli: null, dshHome: null, codexHome: null, claudeHome: null, n: 20, model: null, keyEnv: null, baseUrl: null, json: false, requireComplete: false };
+  const opt = { yes: false, profile: "web", adapter: null, payload: null, policy: null, home: null, cli: null, dshHome: null, codexHome: null, claudeHome: null, n: 20, model: null, keyEnv: null, baseUrl: null, json: false, requireComplete: false, cwd: null, snapshot: null };
   for (let i = 1; i < a.length; i += 1) {
     const t = a[i];
     if (t === "--yes" || t === "-y") opt.yes = true;
@@ -57,6 +59,8 @@ function argv() {
     else if (t === "--codex-home") opt.codexHome = a[++i];
     else if (t === "--claude-home") opt.claudeHome = a[++i];
     else if (t === "--policy") opt.policy = a[++i];
+      else if (t === "--cwd") opt.cwd = a[++i];
+      else if (t === "--snapshot") opt.snapshot = a[++i];
     else if (t === "--prompt") opt.prompt = a[++i];
     else if (t === "--max") opt.max = Number(a[++i]);
     else if (t === "--json") opt.json = true;
@@ -244,6 +248,54 @@ async function main() {
     }
     const r = await adapter.revert(host);
     console.log(r.changed ? `${C.g}已还原${C.x}` : `${C.d}无需还原${C.x}`);
+    return;
+  }
+
+  if (cmd === "layers") {
+    // oag layers [--policy p] [--codex-home d] [--claude-home d] —— 分层体检（带证据等级）
+    const pol = opt.policy ? JSON.parse(fs.readFileSync(opt.policy, "utf8")) : null;
+    const res = layerReport({
+      codexHome: opt.codexHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex"),
+      claudeHome: opt.claudeHome,
+      policy: pol,
+    });
+    console.log(renderLayerReport(res));
+    return;
+  }
+
+  if (cmd === "run") {
+    // oag run [--cwd d] [--check-codex-home d] [--snapshot repo] [--fail-on-taint] -- <命令...>
+    const sep = process.argv.indexOf("--");
+    if (sep === -1 || sep === process.argv.length - 1) {
+      throw new AdapterError(ErrorCode.CAPABILITY_MISSING, '用法：oag run [选项] -- <命令...>（必须用 -- 分隔）');
+    }
+    const argv = process.argv.slice(sep + 1);
+    const cwd = path.resolve(opt.cwd ?? process.cwd());
+    const codexHome = opt.codexHome ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex");
+    const watch = watchList({ cwd, codexHome, claudeHome: opt.claudeHome, policyPath: opt.policy ? path.resolve(opt.policy) : null });
+
+    // canary：闸门活着才开跑（--no-canary 可跳过，日志会记）
+    let canaryFn = null;
+    if (!process.argv.slice(2).includes("--no-canary")) {
+      const { canary } = await import("../src/adapter/codex/guard.js");
+      canaryFn = () => canary({ codexHome, fast: true });
+    }
+
+    console.log(`${C.d}监督运行${C.x}  监控 ${watch.length} 个路径${canaryFn ? "，canary 先过" : "（跳过 canary）"}`);
+    const r = runWatched({ argv, cwd, watch, canaryFn, snapshotRepo: opt.snapshot, failOnTaint: process.argv.slice(2).includes("--fail-on-taint") });
+    if (!r.canaryOk) {
+      console.log(`${C.r}✗ canary 未通过：闸门可能已失效，拒绝开跑${C.x}`);
+    }
+    console.log(`
+  退出码：${r.code}${r.snapshot ? `  快照：${r.snapshot}` : ""}`);
+    if (r.tainted) {
+      console.log(`${C.r}⚠ tainted：运行期间有 ${r.changes.length} 个被监控文件发生变化${C.x}`);
+      for (const c of r.changes.slice(0, 10)) console.log(`    [${c.kind}] ${c.path}`);
+      console.log(`${C.y}  这些变化可能是合法的（比如你自己改了包），也可能意味着闸门被改。请逐条确认，再决定是否晋升产物。${C.x}`);
+    } else {
+      console.log(`${C.g}✓ 被监控文件无变化（闸门与配置未被改动）${C.x}`);
+    }
+    process.exitCode = r.code;
     return;
   }
 
