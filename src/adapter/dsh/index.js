@@ -96,18 +96,26 @@ export function dshAdapter(options = {}) {
 
     /** ① 文本层：块在不在 ② 宿主层：跑 dsh --dump-config 看宿主是否真认（乙的坑#3） */
     async verifyHost(host, payload) {
+      // dsh 没有 --home：非默认 home 一律"无法读回"，明确 skipped（未验证≠通过）
+      const defHome = path.resolve(options.home ?? process.env.DSH_HOME ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".dsh"));
+      const hostHome = path.resolve(path.dirname(path.dirname(path.dirname(host.configPath)))); // <home>/profiles/<profile>/file → <home>
+      if (hostHome !== defHome) {
+        return { ok: false, skipped: true, reason: `非宿主默认 home（${hostHome}），dsh 无法读回该目录 → 未验证` };
+      }
       const text = await readOrNull(host.configPath);
       if (text === null) return { ok: false, reason: "配置文件不存在" };
       if (!text.includes("# >>> open-agent-gate managed")) return { ok: false, reason: "托管块缺失" };
       if (!payload?.expect) return { ok: false, reason: "未声明 expect 断言 → 未验证（不算通过）", skipped: true };
+      // 策略引擎给的是字符串（JSON 里没法存 RegExp），这里统一转成正则
+      const re = payload.expect instanceof RegExp ? payload.expect : new RegExp(String(payload.expect), "m");
       try {
         const out = runHost(cli, ["--profile", profile, "--dump-config"], {
           encoding: "utf8",
           timeout: 120000,
           stdio: ["ignore", "pipe", "pipe"],
         });
-        const ok = payload.expect.test(out);
-        return ok ? { ok: true, source: "host-cli" } : { ok: false, reason: `--dump-config 未体现断言 ${payload.expect}` };
+        const ok = re.test(out);
+        return ok ? { ok: true, source: "host-cli" } : { ok: false, reason: `--dump-config 未体现断言 ${re}` };
       } catch (e) {
         // 跑不动 ≠ 通过：明确 skipped，由 CLI 给非零退出码（甲坑#3）
         return { ok: false, skipped: true, reason: `宿主 CLI 跑不动：${String(e.message).split("\n")[0]}` };

@@ -201,7 +201,20 @@ async function main() {
   }
 
   if (cmd === "verify") {
-    const v = await adapter.verifyHost(host, payloadOf(opt));
+    let vPayload;
+    if (opt.policy) {
+      const rawPolicy = JSON.parse(fs.readFileSync(opt.policy, "utf8"));
+      const c = compile(rawPolicy, adapter.id);
+      if (!c.payload) {
+        console.log(`${C.y}该策略在 ${adapter.id} 上没有可验证部分${C.x}`);
+        process.exitCode = 2;
+        return;
+      }
+      vPayload = c.payload;
+    } else {
+      vPayload = payloadOf(opt);
+    }
+    const v = await adapter.verifyHost(host, vPayload);
     if (v.ok) console.log(`${C.g}通过${C.x}（${v.source ?? "?"}）`);
     else {
       console.log(`${C.y}${v.skipped ? "未验证（不算通过）" : "未通过"}：${v.reason}${C.x}`);

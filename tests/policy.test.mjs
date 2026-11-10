@@ -100,3 +100,33 @@ test("doctor：codex 重复键 + claude JSON 坏了都能被抓到", async () =>
   assert.ok(r.failed.some((f) => f.startsWith("codex:config-parsable")));
   assert.ok(r.failed.some((f) => f.startsWith("claude-code:config-parsable")));
 });
+
+test("回归：策略引擎给的字符串 expect 也能被 dsh verifyHost 使用（不能要求 RegExp）", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "oag-exp-"));
+  fs.mkdirSync(path.join(home, "profiles", "web"), { recursive: true });
+  const cfg = path.join(home, "profiles", "web", "cordis.patch.yml");
+  fs.writeFileSync(cfg, "[]\n");
+  const a = dshAdapter({ home, profile: "web", cli: "/nonexistent.cmd" });
+  const host = await a.detect({});
+  const compiled = compile({ version: 1, identity: { stripHostIdentity: true }, rules: [] }, "dsh");
+  assert.equal(typeof compiled.payload.expect, "string", "策略编译产出的是字符串");
+  await a.apply(await a.plan(host, compiled.payload));
+  const v = await a.verifyHost(host, compiled.payload);
+  // CLI 跑不动 → skipped（不算通过），但绝不能因为 expect 是字符串就抛 TypeError
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /宿主 CLI 跑不动|未体现断言/);
+  assert.ok(!/is not a function/.test(v.reason), "不能出现 TypeError 文案");
+});
+
+test("回归：非默认 home 的 dsh verifyHost 必须 skipped（不能拿别的目录冒充读回）", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "oag-hm-"));
+  fs.mkdirSync(path.join(home, "profiles", "web"), { recursive: true });
+  fs.writeFileSync(path.join(home, "profiles", "web", "cordis.patch.yml"), "[]\n");
+  const a = dshAdapter({ home, profile: "web", cli: "/nonexistent.cmd" });
+  const host = await a.detect({});
+  const compiled = compile({ version: 1, identity: { stripHostIdentity: true }, rules: [] }, "dsh");
+  await a.apply(await a.plan(host, compiled.payload));
+  const v = await a.verifyHost(host, compiled.payload);
+  assert.equal(v.skipped, true);
+  assert.match(v.reason, /非宿主默认 home/);
+});
