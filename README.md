@@ -138,7 +138,14 @@ node bin/oag.js policy --require-complete    # 有任何 unsupported 就 exit 2�
 node bin/oag.js apply --policy open/policy.example.json --yes
 node bin/oag.js doctor                       # 跨宿主自检（宿主/配置可解析/残留/审计）
 node bin/oag.js doctor --json                # 机器可读
+node bin/oag.js continue --adapter codex --max 1 --prompt "..."   # 自动续跑（wrapper，硬上限 10）
+node bin/oag.js probe --adapter dsh          # 行为探针（金丝雀；环境不满足则 skipped）
 ```
+
+`continue` uses the host's own `exec resume <session>` (Codex verified); it is a **wrapper** because
+no host exposes an "auto-continue" config key. `probe` classifies by S3 side-effect > S2 denial text >
+`inconclusive` — never a pass without evidence. Multi-file changes go through `src/core/txn.js`
+(all-or-nothing, with its own journal and recovery).
 
 Policy shape (`open/policy.example.json`): `{version, identity, rules[{action,decision,scope}], autoContinue}`.
 Precedence is `deny > ask > allow`, independent of declaration order. Actions: `READ / WRITE /

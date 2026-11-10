@@ -21,6 +21,7 @@ import { AdapterError, ErrorCode, exitCodeFor } from "../src/adapter/types.js";
 import { readAudit } from "../src/core/audit.js";
 import { doctor } from "../src/core/doctor.js";
 import { compile, validatePolicy, decisionTable, coverage, ACTIONS } from "../src/core/policy.js";
+import { runWithContinue } from "../src/core/auto-continue.js";
 import { recover as recoverFile, journalPath } from "../src/core/safe-write.js";
 
 const C = { g: "\x1b[32m", y: "\x1b[33m", r: "\x1b[31m", d: "\x1b[90m", b: "\x1b[1m", x: "\x1b[0m" };
@@ -52,6 +53,8 @@ function argv() {
     else if (t === "--codex-home") opt.codexHome = a[++i];
     else if (t === "--claude-home") opt.claudeHome = a[++i];
     else if (t === "--policy") opt.policy = a[++i];
+    else if (t === "--prompt") opt.prompt = a[++i];
+    else if (t === "--max") opt.max = Number(a[++i]);
     else if (t === "--json") opt.json = true;
     else if (t === "--require-complete") opt.requireComplete = true;
     else if (/^\d+$/.test(t)) opt.n = Number(t);
@@ -231,6 +234,28 @@ async function main() {
     }
     const r = await adapter.revert(host);
     console.log(r.changed ? `${C.g}已还原${C.x}` : `${C.d}无需还原${C.x}`);
+    return;
+  }
+
+  if (cmd === "continue") {
+    if (typeof adapter.makeRunner !== "function") {
+      console.log(`${C.y}${adapter.id} 不支持自动续跑（无 resume 机制）${C.x}`);
+      process.exitCode = 2;
+      return;
+    }
+    const maxContinues = Math.max(0, Math.min(opt.max ?? 1, 10));
+    const r = await runWithContinue({
+      runner: adapter.makeRunner({ model: opt.model ?? undefined, keyEnv: opt.keyEnv ?? undefined, baseUrl: opt.baseUrl ?? undefined, cwd: process.cwd() }),
+      prompt: opt.prompt ?? "List the files in the current directory, then reply done.",
+      maxContinues,
+      home: opt.dshHome ?? opt.codexHome ?? null,
+      label: `continue-${adapter.id}`,
+    });
+    r.rounds.forEach((x) => {
+      const first = String(x.text).split(String.fromCharCode(10))[0].slice(0, 100);
+      console.log(`  第${x.round}轮: ${first}`);
+    });
+    console.log(`${C.g}共 ${r.rounds.length} 轮（续跑 ${r.continues} 次，上限 ${maxContinues}）${C.x}  session=${r.sessionId ?? "?"}`);
     return;
   }
 

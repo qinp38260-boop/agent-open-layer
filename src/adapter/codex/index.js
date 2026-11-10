@@ -127,6 +127,46 @@ export function codexAdapter(options = {}) {
       return r;
     },
 
+    /**
+     * 给 AUTO_CONTINUE 用的 runner：一轮对话 → 文本 + sessionId。
+     * 首轮用 exec，后续用 exec resume <sessionId>（实测该子命令存在）。
+     */
+    makeRunner(opts = {}) {
+      const env = opts.env ?? process.env;
+      const keyEnv = opts.keyEnv ?? "DEEPSEEK_API_KEY";
+      const baseUrl = opts.baseUrl ?? "https://api.deepseek.com/v1";
+      const model = opts.model ?? "deepseek-chat";
+      const cwd = opts.cwd ?? process.cwd();
+      const common = [
+        "-c", "model_provider=deepseek",
+        "-c", "model_providers.deepseek.name=DeepSeek",
+        "-c", `model_providers.deepseek.base_url=${baseUrl}`,
+        "-c", `model_providers.deepseek.env_key=${keyEnv}`,
+        "-m", model,
+      ];
+      return async ({ prompt, sessionId }) => {
+        const args = sessionId
+          ? ["exec", "resume", sessionId, "--json", "--skip-git-repo-check", ...common, prompt]
+          : ["exec", "--json", "--skip-git-repo-check", "-C", cwd, "--approve-for-me", ...common, prompt];
+        const out = runHost(cli, args, { encoding: "utf8", timeout: opts.timeoutMs ?? 300000, stdio: ["ignore", "pipe", "pipe"], env, cwd });
+        const lines = String(out).split(String.fromCharCode(10)).filter((l) => l.trim().startsWith("{"));
+        let text = "";
+        let sid = sessionId;
+        for (const line of lines) {
+          let d;
+          try {
+            d = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (d.type === "thread.started" && d.thread_id) sid = d.thread_id;
+          const it = d.item ?? {};
+          if (it.type === "agent_message" && it.text) text += (text ? String.fromCharCode(10) : "") + it.text;
+        }
+        return { text, sessionId: sid, raw: out };
+      };
+    },
+
     /** 文本层校验；有 patch 才可能通过，否则 skipped（未验证≠通过） */
     async verifyHost(host, payload) {
       const text = await readOrNull(host.configPath);

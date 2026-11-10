@@ -55,6 +55,8 @@ if (cv.ok) {
   add("codex", codexVer, "第三方模型（OpenAI 兼容）", "可接（不写 wire_api；写了会报 chat 已废弃）", "codex exec -c model_providers.deepseek.* -m deepseek-chat", "✅ 本机实测");
   add("codex", codexVer, "事件流结构（--json）", "thread.started / turn.started / item.completed / turn.completed；item: agent_message|command_execution|error；**无 approval 字段**", "codex exec --json", "✅ 本机实测");
   add("codex", codexVer, "被 policy 拒绝的表现", "仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令", "codex exec -s read-only", "✅ 本机实测");
+  const resume = sh(CODEX, ["exec", "resume", "--help"]);
+  add("codex", codexVer, "自动续跑能力（exec resume）", has(resume.out, /Resume a previous session/) ? "有（SESSION_ID + PROMPT），wrapper 可驱动续跑" : "未解析", "codex exec resume --help", has(resume.out, /Resume a previous session/) ? "✅ 本机实测" : "U");
   add("codex", codexVer, "只有 bypass 才真执行", "approval_policy=never + workspace-write 仍被拒；--dangerously-bypass-* 才真写盘", "金丝雀写文件对照实验", "✅ 本机实测");
 }
 
@@ -66,7 +68,10 @@ if (dv.ok) {
   add("dsh", dshVer, "配置读回（--dump-config）", dc.ok ? "可用，能看出 entry 的 config 与 patched by" : `失败：${dc.err.slice(0, 80)}`, "dsh --profile web --dump-config", dc.ok ? "✅ 本机实测" : "U");
   add("dsh", dshVer, "identity 开关", has(dc.out, /includeHarnessIdentity/) ? "system-prompt.includeHarnessIdentity 存在" : "未解析", "dump-config 中 system-prompt entry", has(dc.out, /includeHarnessIdentity/) ? "✅ 本机实测" : "U");
   add("dsh", dshVer, "approval.policy=never 的真实语义", "**自动拒绝**（fail-closed），不是放开 —— 源码 NEVER_SENTENCE 原文", "dsh-user-approval/lib/index.js", "✅ 源码级");
-  add("dsh", dshVer, "行为探针（金丝雀）", "未实现（v3.2）", "-", "U");
+  const hl = sh(DSH, ["--profile", "headless", "reply with PONG"], { timeout: 60000 });
+  const headlessOk = hl.ok && !/#include|Cannot find module|ERR_MODULE_NOT_FOUND/i.test(hl.out + (hl.err ?? ""));
+  add("dsh", dshVer, "headless 非交互模式", headlessOk ? "可用（可做金丝雀探针）" : "不可用（本机未安装 headless profile）", "dsh --profile headless \"reply with PONG\"", "✅ 本机实测");
+  add("dsh", dshVer, "行为探针（金丝雀）", headlessOk ? "可实现" : "已实现但环境不满足 → 返回 skipped（未验证≠通过）", "oag probe --adapter dsh", "✅ 本机实测");
 }
 
 // ---------------- Claude Code ----------------

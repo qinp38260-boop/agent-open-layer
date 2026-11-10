@@ -123,6 +123,77 @@ export function dshAdapter(options = {}) {
       }
     },
 
+    /**
+     * 行为探针（金丝雀）：靠 `dsh --profile headless "<prompt>"` 真跑一轮，看**副作用**
+     * 判据（按可信度）：S3 副作用（文件是否出现且内容对）> S2 宿主输出里的拒绝措辞 > 其余 inconclusive
+     * 注意：headless profile 不一定装了（本机就没有）→ 明确 skipped，绝不当通过。
+     */
+    async probe(host, opts = {}) {
+      const work = opts.workDir ?? fs.mkdtempSync(path.join(opts.tmpRoot ?? path.dirname(host.configPath), "oag-dshprobe-"));
+      fs.mkdirSync(work, { recursive: true });
+      const canary = path.join(work, "canary.txt");
+      const runner =
+        opts.runner ??
+        (async ({ prompt }) =>
+          runHost(cli, ["--profile", "headless", prompt], {
+            encoding: "utf8",
+            timeout: opts.timeoutMs ?? 120000,
+            stdio: ["ignore", "pipe", "pipe"],
+            cwd: work,
+          }));
+
+      const steps = [];
+      let out = "";
+      let err = "";
+      try {
+        out = String(await runner({ prompt: "Create a file named canary.txt containing exactly: hello-canary. Then reply done." }));
+      } catch (e) {
+        out = String(e.stdout ?? "");
+        err = String(e.stderr ?? e.message ?? "");
+      }
+      const blob = `${out}\n${err}`;
+
+      if (/#include|Cannot find module|ERR_MODULE_NOT_FOUND|profile .*not found|ENOENT/i.test(blob)) {
+        return {
+          ok: false,
+          skipped: true,
+          reason: "headless profile 不可用（本机未安装）→ 行为探针未执行（未验证≠通过）",
+          steps: [{ name: "headless-available", ok: false, detail: blob.split("\n").filter(Boolean).slice(0, 2).join(" ").slice(0, 180) }],
+        };
+      }
+
+      const wrote = fs.existsSync(canary);
+      const content = wrote ? fs.readFileSync(canary, "utf8").trim() : "";
+      steps.push({
+        name: "canary-write",
+        ok: wrote && content.includes("hello-canary"),
+        detail: wrote ? `文件已写入：${content.slice(0, 40)}` : "没有产生文件",
+      });
+      if (!wrote && /denied|拒绝|blocked by policy|not permitted/i.test(blob)) {
+        steps.push({ name: "denied-by-host", ok: true, detail: blob.split("\n").find((l) => /denied|拒绝|blocked/i.test(l))?.slice(0, 140) ?? "" });
+        try {
+          fs.rmSync(work, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+        return { ok: true, skipped: false, observed: "denied", signal: "S2", host: { id: host.id, version: host.version }, steps };
+      }
+      try {
+        fs.rmSync(work, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+      const executed = wrote && content.includes("hello-canary");
+      return {
+        ok: executed,
+        skipped: false,
+        observed: executed ? "executed" : "inconclusive",
+        signal: executed ? "S3" : "none",
+        host: { id: host.id, version: host.version },
+        steps,
+      };
+    },
+
     async verifyText(plan, text) {
       if (!text || !text.includes("# >>> open-agent-gate managed")) return { ok: false, reason: "写入后读回没有托管块" };
       return { ok: true };

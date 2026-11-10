@@ -69,12 +69,36 @@ oag doctor  健康
 `0` 成功 · `1` verify/doctor 失败 · `2` 未验证 / 需 `--yes` / 策略不完整 · `3` 宿主或版本 ·
 `4` 竞态或锁 · `5` IO · `6` 需 recover / 块损坏 · `7` 回滚失败
 
-## 5. 还没做（下一步的靶子）
+## 5. v4.2 补齐的三块（原欠账，已完成）
 
-1. **多文件事务**：一次策略要改 2 个文件时，目前是逐文件 journal；需要 txn（全成或全回滚）
-2. **`AUTO_CONTINUE` 的 hook 落地**：Codex `Stop` hook / Claude Code `Stop` hook（要先取证 hook 协议）
-3. **DSH 行为探针**：`--dump-config` 只能证明写进去了；金丝雀读写删还没做
-4. **策略 diff 与审计联动**：现在 audit 记"写了什么"，没记"对应哪条策略规则"
+### 5.1 多文件事务 `src/core/txn.js`
+`commitTxn({files:[{path,after,baseHash}]})`：按路径排序抢锁 → 残留 journal 拦截 → 全量竞态检查 →
+全量备份 + 事务 journal → 备份后再全量比一次 hash → **先全部写临时文件，再全部 rename** →
+校验失败则**全量还原** → 清 journal。
+`recoverTxn()` 按事务 journal 全量还原。测试覆盖：成功/残留 journal 拒写/竞态一个都不动/校验失败全回滚/recover。
+
+### 5.2 AUTO_CONTINUE `src/core/auto-continue.js` + `oag continue`
+实测结论：**Codex 没有"自动继续"的配置键**，官方能力是 `codex exec resume <SESSION_ID> <PROMPT>`
+（`codex exec resume --help` 实测存在）→ 续跑只能 wrapper 驱动。
+
+护栏：`maxContinues` 默认 1、**硬上限 10**、空回复不续、出现 `DONE/✅/任务完成` 停、runner 抛错立即停并审计。
+
+真机结果（DeepSeek，两轮）：
+```
+第1轮: A canary probe is a small, low-risk test change deployed to verify ...
+第2轮: A canary probe is a small, low-risk test deployment used to verify ...
+共 2 轮（续跑 1 次，上限 1）  session=01a1c642-...
+```
+→ **resume 确实续上了同一会话**（不是重开）。
+
+### 5.3 DSH 行为探针 `dshAdapter.probe`
+用 `dsh --profile headless "<prompt>"` 真跑，按可信度判：**S3 副作用（文件出现且内容对）> S2 宿主拒绝措辞 > 其余 inconclusive**。
+真机现状：本机**没有 headless profile** → 如实返回 `skipped`（"未验证≠通过"），并把真实报错带出来。
+
+### 5.4 仍待做
+1. **策略 diff 与审计联动**：audit 记了"写了什么"，还没记"对应哪条策略规则"
+2. Codex/Claude 的 **Stop hook** 方案（若要脱离 wrapper 层做原生续跑，需先取证 hook 协议）
+3. DSH headless profile 装好后，金丝雀探针可一键跑通（代码已就绪）
 
 ## 6. 复盘：什么叫"更高级"
 
