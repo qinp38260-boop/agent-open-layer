@@ -14,7 +14,7 @@ import { canary, status as guardStatus, auditGuard } from "../adapter/codex/guar
 import { status as ccStatus } from "../adapter/claude/hooks.js";
 import { detect as detectSandbox, plan as sandboxPlan } from "./sandbox.js";
 import { collectRoots, decisionTable } from "./policy.js";
-import { judgeL0, judgeGateTamper } from "./l0-evidence.js";
+import { judgeL0, judgeGateTamper, accountEnabled } from "./l0-evidence.js";
 import { judgeL6 } from "./l6-evidence.js";
 
 const RANK = { "probe-verified": 3, "config-only": 2, unverified: 1, missing: 0 };
@@ -32,8 +32,12 @@ export function layerReport({ codexHome, claudeHome, policy }) {
   if (l0.ok) {
     push("L0 主体隔离", "独立账号 + 文件 ACL", "probe-verified", `${l0.reason}（证据：${l0.evidencePath}）`);
   } else if (acct?.configured) {
-    push("L0 主体隔离", "独立账号 + 工作目录授权", "config-only",
-      `账号 ${env.agentAccount} 已存在且 ${env.agentWorkDir} 已授权；尚未以该身份跑过验证（跑一次后才算 probe-verified）`);
+    const st2 = accountEnabled(env.agentAccount);
+    const stopped = st2.exists && st2.enabled === false;
+    push("L0 主体隔离", "独立账号 + 文件 ACL", stopped ? "config-only" : "config-only",
+      stopped
+        ? `账号 ${env.agentAccount} 已停用 → 隔离当前不生效（历史证据与 ACL 保留，启用即恢复）`
+        : (l0.reason || "账号已存在但证据不足"));
   } else {
     push(
       "L0 主体隔离",
