@@ -198,6 +198,26 @@ icacls "D:\work\.codex\hooks.json" /inheritance:r ^
 `(RX)` = 读 + 执行，不含 SYNCHRONIZE 之外的写位；继承被切断，`Authenticated Users:(M)`
 不再传导 → 既能读、又不能改。
 
+## 实测 9：改成 `(RX)` 之后复验 14 项（含"闸门自己能不能跑起来"）
+
+上一版用 `DENY(W)` 时闸门文件连读都被禁（见上一节）。改为
+`/inheritance:r` + `agent_runner:(RX)` 后，以该账号复验：
+
+| 分组 | 项目 | 结果 |
+|---|---|---|
+| 隔离 | 写 `D:\work` | **ALLOWED** |
+| 隔离 | 读 `.env` / 写用户目录 / 列 `.ssh` / 写 `C:\Windows` | **BLOCKED** ×4 |
+| 抗篡改 | 改 hooks.json / 改闸门脚本 / **删**闸门脚本 / 改 policy.json | **BLOCKED** ×4 |
+| 可用性 | 读 hooks.json（233 字符） | **ALLOWED** |
+| 可用性 | 读 policy.json（1288 字符） | **ALLOWED** |
+| **可用性** | **执行闸门脚本（空事件）** | **ALLOWED**，输出 `{"decision":"block"}`，gate-exit 0 |
+| 工具链 | `node --version` / codex.exe 可读 | **ALLOWED** |
+
+最后一行是关键：**闸门在这个账号下真能被 node 执行，且空事件走 fail-closed。**
+否则就是上一个坑——文件在、拦得住、但闸门根本起不来。
+
+域外核对：四个闸门文件字节数与 mtime 均未变（03:22:5x），越界文件均未出现。
+
 ## 启动自检（canary）
 
 ```bash

@@ -1,0 +1,26 @@
+﻿=== identity ===
+whoami: 完美\agent_runner
+isAdmin: False
+
+write D:\work\l0-ok.txt : ALLOWED
+read hermes_data\.env : BLOCKED :: UnauthorizedAccessException
+write C:\Users\p1553\l0-should-fail.txt : BLOCKED :: UnauthorizedAccessException
+list C:\Users\p1553\.ssh : BLOCKED :: UnauthorizedAccessException
+write C:\Windows\x.txt : BLOCKED :: UnauthorizedAccessException
+tamper gate hooks.json : BLOCKED :: UnauthorizedAccessException
+tamper gate script : BLOCKED :: UnauthorizedAccessException
+delete gate script : BLOCKED :: ArgumentException
+tamper policy.json : BLOCKED :: UnauthorizedAccessException
+read gate hooks.json : ALLOWED
+    -> len=233
+read gate policy.json : ALLOWED
+    -> len=1288
+    gate-exit: 0
+execute gate script (empty event) : ALLOWED
+    -> fail-closed ok: {"decision":"block","reason":"OAG_GUARD 鎷掔粷锛堜簨浠朵负绌猴紙瀹夸富娌℃湁浼?payload锛夛級锛氬涓诲 hook 寮傚父鏄?fai
+run node --version : ALLOWED
+    -> C:\Program Files\nodejs\node.exe v24.19.0
+codex.exe readable : ALLOWED
+    -> bytes=369062704
+
+summary: write D:\work\l0-ok.txt : ALLOWED | read hermes_data\.env : BLOCKED :: UnauthorizedAccessException | write C:\Users\p1553\l0-should-fail.txt : BLOCKED :: UnauthorizedAccessException | list C:\Users\p1553\.ssh : BLOCKED :: UnauthorizedAccessException | write C:\Windows\x.txt : BLOCKED :: UnauthorizedAccessException | tamper gate hooks.json : BLOCKED :: UnauthorizedAccessException | tamper gate script : BLOCKED :: UnauthorizedAccessException | delete gate script : BLOCKED :: ArgumentException | tamper policy.json : BLOCKED :: UnauthorizedAccessException | read gate hooks.json : ALLOWED | read gate policy.json : ALLOWED | execute gate script (empty event) : ALLOWED | run node --version : ALLOWED | codex.exe readable : ALLOWED
