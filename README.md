@@ -90,6 +90,22 @@ ROADMAP.md                 adapter contract, per-host capability matrix (v0.3)
 - No bundled asset packs / skill packs / "redteam" content
 - Read [SECURITY.md](SECURITY.md) before using it on a machine you care about
 
+## Second reviewer (cheap)
+
+`scripts/codex-review.sh` drives an external agent harness (Codex CLI) with a third-party
+OpenAI-compatible model to review your own code — good for finding real bugs without
+spending review-model quota:
+
+```bash
+./scripts/codex-review.sh                        # review uncommitted changes
+./scripts/codex-review.sh --files "src/a.js lib/b.js" --max 5
+./scripts/codex-review.sh --base main --focus correctness --strict
+```
+
+Requires `codex` on PATH, `DEEPSEEK_API_KEY` in env or `D:/Programs/hermes_data/.env`,
+and `--approve-for-me` semantics (verified on codex-cli 0.167.0). Findings are **candidates** —
+verify each against the code and add a regression test per fix.
+
 ## License
 
 MIT

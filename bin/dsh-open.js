@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dshHome, hostVersion, patchFile, profileDir } from "../lib/host.js";
+import { dshHome, hostVersion, patchFile, profileDir, assertProfile } from "../lib/host.js";
 import { BEGIN, END, VERSION_TAG, compose, stripBlock, blockBody, backup, writeAtomic, readFileOr } from "../lib/patchfile.js";
 import { logAudit, readAudit } from "../lib/audit.js";
 
@@ -94,6 +94,13 @@ function verify(opt, home) {
 
 function main() {
   const { cmd, opt } = argv();
+  // 修（codex 审查发现）：profile 会拼进文件路径，先硬校验，非法直接退
+  try {
+    assertProfile(opt.profile);
+  } catch (e) {
+    console.error(`ERROR: ${e.message}`);
+    process.exit(1);
+  }
   const home = dshHome(opt.home);
   const host = hostVersion(home);
   const pf = patchFile(home, opt.profile);
