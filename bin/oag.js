@@ -275,8 +275,9 @@ async function main() {
     if (sub === "audit") {
       // 体检：闸门自己会不会被 agent 拆掉（实测过：会被拆）
       if (!opt.policy) throw new AdapterError(ErrorCode.CAPABILITY_MISSING, "guard audit 需要 --policy <文件>");
-      const pol = JSON.parse(path.resolve && fs.readFileSync(opt.policy, "utf8"));
-      for (const f of auditGuard(home, pol)) {
+      const pol = JSON.parse(fs.readFileSync(opt.policy, "utf8"));
+      const st = guardStatus(home);
+      for (const f of auditGuard(home, pol, st.state?.auditPath)) {
         const icon = f.level === "critical" ? `${C.r}✗ 严重${C.x}` : f.level === "warning" ? `${C.y}⚠ 注意${C.x}` : `${C.g}✓${C.x}`;
         console.log(`  ${icon}  ${f.issue}`);
         if (f.file !== "-") console.log(`        ${f.file}`);
