@@ -41,25 +41,33 @@ const run = (script, ev) => {
   return { ...out, exitCode: r.status, raw: r.stdout };
 };
 
-test("Bash 破坏性 → block；普通 → allow", () => {
+/**
+ * 平台说明：本文件里凡是写死 `D:/w`、`C:/secret` 的用例，只在 Windows 上有意义 ——
+ * 在 POSIX 上 `D:/w/a` 不是绝对路径，node path.resolve 会把它拼到 cwd 下面，
+ * 于是"目录内"被判成越界（CI 的 ubuntu 三条腿就是栽在这里，2026-11-11）。
+ * 这类用例标 winOnly；同时补一组 POSIX 等价用例（临时目录），保证 linxu 上有覆盖。
+ */
+const winOnly = process.platform === "win32" ? test : test.skip;
+
+winOnly("Bash 破坏性 → block；普通 → allow", () => {
   const { script } = setup();
   assert.equal(run(script, { tool_name: "Bash", tool_input: { command: "rm -rf D:/w/x" }, cwd: "D:/w" }).decision, "block");
   assert.equal(run(script, { tool_name: "Bash", tool_input: { command: "echo hi" }, cwd: "D:/w" }).decision, undefined);
 });
 
-test("Write/Edit 越界 → block；目录内 → allow", () => {
+winOnly("Write/Edit 越界 → block；目录内 → allow", () => {
   const { script } = setup();
   assert.equal(run(script, { tool_name: "Write", tool_input: { file_path: "C:/secret/a" }, cwd: "D:/w" }).decision, "block");
   assert.equal(run(script, { tool_name: "Edit", tool_input: { file_path: "C:/secret/a" }, cwd: "D:/w" }).decision, "block");
   assert.equal(run(script, { tool_name: "Write", tool_input: { file_path: "D:/w/a" }, cwd: "D:/w" }).decision, undefined);
 });
 
-test("Read 越界（.env）→ block", () => {
+winOnly("Read 越界（.env）→ block", () => {
   const { script } = setup();
   assert.equal(run(script, { tool_name: "Read", tool_input: { file_path: "D:/Programs/hermes_data/.env" }, cwd: "D:/w" }).decision, "block");
 });
 
-test("WebFetch → NET deny", () => {
+winOnly("WebFetch → NET deny", () => {
   const { script } = setup();
   assert.equal(run(script, { tool_name: "WebFetch", tool_input: {}, cwd: "D:/w" }).decision, "block");
 });
