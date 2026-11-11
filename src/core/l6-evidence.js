@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-export function judgeL6({ snapshotDir = process.env.OAG_L6_SNAPSHOT_DIR || "D:/work/repo-demo/.oag-snapshots" } = {}) {
+export function judgeL6({ snapshotDir = process.env.OAG_L6_SNAPSHOT_DIR || "D:/agent-work/repo-demo/.oag-snapshots" } = {}) {
   if (!fs.existsSync(snapshotDir)) {
     return { ok: false, status: "config-only", reason: `未找到演练快照目录：${snapshotDir}` };
   }

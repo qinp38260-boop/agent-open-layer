@@ -6,7 +6,7 @@ const policy = {
   version: 1,
   rules: [
     { action: "READ", decision: "allow", scope: {} },
-    { action: "WRITE", decision: "allow", scope: { paths: ["D:/work/**"] } },
+    { action: "WRITE", decision: "allow", scope: { paths: ["D:/agent-work/**"] } },
     { action: "EXEC_SAFE", decision: "allow", scope: {} },
     { action: "EXEC_DESTRUCTIVE", decision: "deny", scope: {} },
     { action: "EXEC_INSTALL", decision: "ask", scope: {} },
@@ -14,7 +14,7 @@ const policy = {
     { action: "NET", decision: "deny", scope: {} },
   ],
 };
-const cls = (command, toolName = "Bash") => classify({ toolName, command, policy, cwd: "D:/work" });
+const cls = (command, toolName = "Bash") => classify({ toolName, command, policy, cwd: "D:/agent-work" });
 
 test("破坏性命令 → deny", () => {
   for (const c of ["rm -rf /tmp/x", "git reset --hard HEAD~3", "git push --force origin main", "del /f a.txt", "DROP TABLE users;"]) {
@@ -55,9 +55,9 @@ test("联网 → deny", () => {
 });
 
 test("写允许目录内 → allow；越界 → deny", () => {
-  const inside = classify({ toolName: "Bash", command: "Set-Content -Path D:/work/out.txt -Value hi", policy, cwd: "D:/work" });
+  const inside = classify({ toolName: "Bash", command: "Set-Content -Path D:/agent-work/out.txt -Value hi", policy, cwd: "D:/agent-work" });
   assert.equal(inside.decision, "allow", "允许目录内应放行");
-  const outside = classify({ toolName: "Bash", command: "Set-Content -Path D:/other/out.txt -Value hi", policy, cwd: "D:/work" });
+  const outside = classify({ toolName: "Bash", command: "Set-Content -Path D:/other/out.txt -Value hi", policy, cwd: "D:/agent-work" });
   assert.equal(outside.action, "WRITE");
   assert.equal(outside.decision, "deny", "越界写必须拦");
 });
@@ -70,7 +70,7 @@ test("普通命令 → allow", () => {
 });
 
 test("破坏性优先于写检查（rm -rf 不会被当成普通写）", () => {
-  const r = cls("rm -rf D:/work/old");
+  const r = cls("rm -rf D:/agent-work/old");
   assert.equal(r.action, "EXEC_DESTRUCTIVE");
   assert.equal(r.decision, "deny");
 });

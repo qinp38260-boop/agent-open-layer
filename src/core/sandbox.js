@@ -48,7 +48,7 @@ export function detect() {
   const acc = run("net", ["user", process.env.OAG_AGENT_ACCOUNT || "agent_runner"]);
   d.agentAccount = process.env.OAG_AGENT_ACCOUNT || "agent_runner";
   d.agentAccountExists = acc.ok && !/找不到|not found|没有此用户/i.test(acc.out);
-  const workDir = process.env.OAG_AGENT_WORK || "D:/work";
+  const workDir = process.env.OAG_AGENT_WORK || "D:/agent-work";
   d.agentWorkDir = workDir;
   d.agentWorkDirExists = fs.existsSync(workDir);
   if (d.agentWorkDirExists) {
