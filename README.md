@@ -116,8 +116,8 @@ Tests are equivalence assertions: every spelling of the same intent must get the
 ## The gate (PreToolUse)
 
 ```bash
-node bin/oag.js guard install --codex-home D:/work/.codex --policy D:/work/.codex/policy.json
-node bin/oag.js guard canary --codex-home D:/work/.codex --live   # proves it blocks a live host action
+node bin/oag.js guard install --codex-home D:/agent-work/.codex --policy D:/agent-work/.codex/policy.json
+node bin/oag.js guard canary --codex-home D:/agent-work/.codex --live   # proves it blocks a live host action
 ```
 
 Properties that are non-negotiable, each backed by a measurement:
@@ -135,8 +135,8 @@ Create the account once (admin), then everything else needs no elevation:
 
 ```powershell
 net user agent_runner * /add
-mkdir D:\work
-icacls D:\work /grant "agent_runner:(OI)(CI)M"
+mkdir D:/agent-work
+icacls D:/agent-work /grant "agent_runner:(OI)(CI)M"
 icacls "D:\Programs\hermes_data\.env" /deny "agent_runner:(F)"
 ```
 
@@ -146,7 +146,7 @@ guard can no longer read its own policy and dies -> host fails open -> **protect
 Correct form:
 
 ```cmd
-icacls "D:\work\.codex\hooks.json" /inheritance:r ^
+icacls "D:/agent-work\.codex\hooks.json" /inheritance:r ^
   /grant "p1553:(F)" /grant "SYSTEM:(F)" /grant "Administrators:(F)" /grant "agent_runner:(RX)"
 ```
 
@@ -167,9 +167,9 @@ After stopping, `oag layers` reports L0 as `config-only`: *"account disabled -> 
 ## L6: promote after review
 
 ```bash
-oag run --cwd D:/work/repo --codex-home D:/work/.codex \
-        --policy D:/work/.codex/policy.json \
-        --snapshot D:/work/repo --fail-on-taint -- <command>
+oag run --cwd D:/agent-work/repo --codex-home D:/agent-work/.codex \
+        --policy D:/agent-work/.codex/policy.json \
+        --snapshot D:/agent-work/repo --fail-on-taint -- <command>
 ```
 
 Exit codes: `0` clean / `10` canary failed (never started) / `11` tainted.

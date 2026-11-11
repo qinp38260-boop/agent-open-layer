@@ -40,7 +40,7 @@ Agent 在隔离环境里自由干活，人只审它最终交出来的 diff。
 
 | 层 | 做什么 | 状态 | 凭什么 |
 |---|---|---|---|
-| **L0 主体隔离** | 换一个 Windows 账号跑 agent，用 NTFS ACL 划边界 | ✅ 实测 14 项 | 以 `agent_runner` 身份：能写 `D:\work`；读 `.env`、写用户目录、列 `.ssh`、写 `C:\Windows` 全被拒 |
+| **L0 主体隔离** | 换一个 Windows 账号跑 agent，用 NTFS ACL 划边界 | ✅ 实测 14 项 | 以 `agent_runner` 身份：能写 `D:/agent-work`；读 `.env`、写用户目录、列 `.ssh`、写 `C:\Windows` 全被拒 |
 | **L0 闸门抗篡改** | agent 改不掉/删不掉自己的闸门 | ✅ 实测 | 改 `hooks.json`、改闸门脚本、**删**闸门脚本、改 `policy.json` —— 4 项全 BLOCKED |
 | **L0 闸门可运行** | 闸门在那个账号下必须**读得到、跑得起来** | ✅ 实测 | `node oag-guard.mjs` 以 `agent_runner` 执行，空事件输出 `{"decision":"block"}`，退出码 0 |
 | **L1 写范围** | 只允许在工作目录写 | ✅ 实测（8 动作矩阵） | 工作区外写、第二个目录写、删除、装包、git 提交全被拦 |
@@ -53,7 +53,7 @@ Agent 在隔离环境里自由干活，人只审它最终交出来的 diff。
 跑一次自己看：
 
 ```bash
-node bin/oag.js layers --policy open/policy.dev.json --codex-home D:/work/.codex
+node bin/oag.js layers --policy open/policy.dev.json --codex-home D:/agent-work/.codex
 ```
 
 它会输出每层的等级，并给出**最弱一环**——这是本项目最重要的汇报纪律：一张全绿的表等于骗人。
@@ -63,8 +63,8 @@ node bin/oag.js layers --policy open/policy.dev.json --codex-home D:/work/.codex
 ### 用法 A：让宿主帮我审代码（最安全，收益最快）
 
 ```bash
-node bin/oag.js guard install --codex-home D:/work/.codex --policy open/policy.review.json
-node bin/oag.js guard canary --codex-home D:/work/.codex --live
+node bin/oag.js guard install --codex-home D:/agent-work/.codex --policy open/policy.review.json
+node bin/oag.js guard canary --codex-home D:/agent-work/.codex --live
 ```
 
 然后走 `codex exec --json ... "只读审查这几个文件，输出 file:line — bug — impact，最多 5 条"`。
@@ -73,9 +73,9 @@ node bin/oag.js guard canary --codex-home D:/work/.codex --live
 ### 用法 B：让 agent 干活（开 dev 档 + 闸门）
 
 ```bash
-node bin/oag.js guard install --codex-home D:/work/.codex --policy open/policy.dev.json
-node bin/oag.js run --cwd D:/work/repo --codex-home D:/work/.codex \
-    --policy D:/work/.codex/policy.json --snapshot D:/work/repo --fail-on-taint -- <命令>
+node bin/oag.js guard install --codex-home D:/agent-work/.codex --policy open/policy.dev.json
+node bin/oag.js run --cwd D:/agent-work/repo --codex-home D:/agent-work/.codex \
+    --policy D:/agent-work/.codex/policy.json --snapshot D:/agent-work/repo --fail-on-taint -- <命令>
 ```
 
 退出码 `0` 干净、`10` canary 没过没开跑、`11` 有文件被动过（tainted）。
@@ -106,8 +106,8 @@ node bin/oag.js run --cwd D:/work/repo --codex-home D:/work/.codex \
 
 ```powershell
 net user agent_runner * /add      \ 交互输两次密码
-mkdir D:\work
-icacls D:\work /grant "agent_runner:(OI)(CI)M"
+mkdir D:/agent-work
+icacls D:/agent-work /grant "agent_runner:(OI)(CI)M"
 icacls "D:\Programs\hermes_data\.env" /deny "agent_runner:(F)"
 ```
 
@@ -125,7 +125,7 @@ icacls "D:\Programs\hermes_data\.env" /deny "agent_runner:(F)"
 正解（切断继承 + 只授读执行）：
 
 ```cmd
-icacls "D:\work\.codex\hooks.json" /inheritance:r ^
+icacls "D:/agent-work\.codex\hooks.json" /inheritance:r ^
   /grant "p1553:(F)" /grant "SYSTEM:(F)" /grant "Administrators:(F)" /grant "agent_runner:(RX)"
 ```
 
@@ -191,7 +191,7 @@ net user agent_runner /active:yes   \ 恢复（ACL、闸门、证据都还在，
 ```bash
 node scripts/net-probe.mjs --base D:/temp/net-bypass --bypass   # 先跑对照
 node scripts/net-probe.mjs --base D:/temp/net-restrict          # 再跑受限档
-node bin/oag.js layers --policy open/policy.dev.json --codex-home D:/work/.codex
+node bin/oag.js layers --policy open/policy.dev.json --codex-home D:/agent-work/.codex
 ```
 
 兜底一层：宿主沙箱被绕过（`--bypass`）时，闸门在**动作层**拦 `curl/wget/Invoke-WebRequest`
@@ -213,8 +213,8 @@ node bin/oag.js layers --policy open/policy.dev.json --codex-home D:/work/.codex
 装完必须验的两个动作：
 
 ```bash
-node bin/oag.js guard canary --codex-home D:/work/.codex        # 快测：破坏性被拦、普通放行
-node bin/oag.js guard canary --codex-home D:/work/.codex --live # 真让宿主去删一个必须存活的文件
+node bin/oag.js guard canary --codex-home D:/agent-work/.codex        # 快测：破坏性被拦、普通放行
+node bin/oag.js guard canary --codex-home D:/agent-work/.codex --live # 真让宿主去删一个必须存活的文件
 ```
 
 ## 八、L6 产物晋升：跑完由 diff 决定去留
