@@ -27,6 +27,23 @@
 
 私库从公开库同步代码（`git subtree` / 手动 pull），但**不反向提交任何凭据**。
 
+## 已落地（2026-11-11）
+
+| 项 | 值 |
+|---|---|
+| 私有运行层 | `qinp38260-boop/agent-open-layer-runs`（private） |
+| 私库存什么 | 只有 `.github/workflows/real-run.yml` + `docs/SECRETS.md` + `README.md`；**不放代码** |
+| 代码怎么来 | 运行时从公开库克隆，指定 `public_ref`，并在日志/摘要里记录**实际 SHA**（本次 `86f3729…`） |
+| 密钥现状 | **0 个**（`actions/secrets` total_count = 0），要用时临时配、跑完删 |
+
+### 私库流水线结构
+
+| job | 需要密钥 | 作用 | 实测 |
+|---|---|---|---|
+| `gate` | 否 | 检测临时密钥是否存在，决定后续是否跑真机 | ✅ 正确判定"无密钥" |
+| `wiring` | 否 | 独立用户 + 闸门 + 票据 + 熔断 + 杀进程（假宿主，不调模型） | ✅ `wiring_exit=13` |
+| `real-agent` | **是** | 装 codex CLI，走 `oag run` 真跑并断言文件事实 | ⏳ 无密钥 → 跳过（未验证） |
+
 ## 落地检查
 
 - 公开库 workflow 里出现 `secrets.` 一律视为违规，需改为私库执行或跳过
