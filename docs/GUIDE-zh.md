@@ -40,11 +40,11 @@ Agent 在隔离环境里自由干活，人只审它最终交出来的 diff。
 
 | 层 | 做什么 | 状态 | 凭什么 |
 |---|---|---|---|
-| **L0 主体隔离** | 换一个 Windows 账号跑 agent，用 NTFS ACL 划边界 | ✅ 实测 14 项 | 以 `agent_runner` 身份：能写 `D:/agent-work`；读 `.env`、写用户目录、列 `.ssh`、写 `C:\Windows` 全被拒 |
+| **L0 主体隔离** | 换一个 Windows 账号跑 agent，用 NTFS ACL 划边界 | ✅ 实测 14 项 | 以 `agent_runner` 身份：能写 `D:/agent-work`；读 `.env`、写用户目录、列 `.ssh`、写 `C:\Windows` 全被拒 ｜**当前态：账号已停用 → 未生效（config-only）** |
 | **L0 闸门抗篡改** | agent 改不掉/删不掉自己的闸门 | ✅ 实测 | 改 `hooks.json`、改闸门脚本、**删**闸门脚本、改 `policy.json` —— 4 项全 BLOCKED |
 | **L0 闸门可运行** | 闸门在那个账号下必须**读得到、跑得起来** | ✅ 实测 | `node oag-guard.mjs` 以 `agent_runner` 执行，空事件输出 `{"decision":"block"}`，退出码 0 |
 | **L1 写范围** | 只允许在工作目录写 | ✅ 实测（8 动作矩阵） | 工作区外写、第二个目录写、删除、装包、git 提交全被拦 |
-| **L2 网络** | 沙箱断网 + 动作层兜底 | ✅ 实测 | 受限档：本机蜜标服务**收到 0 个请求**（服务端视角，不是 agent 自称）；放开档对照蜜标命中且拿到 `example.com` 真实标题；闸门对 `curl` 事件实测返回 block |
+| **L2 网络** | 沙箱断网 + 动作层兜底 | ✅ 实测 | 受限档：本机蜜标**在已测路径上收到 0 个请求**（服务端视角，不是 agent 自称；不覆盖 shell/git/DNS/裸 socket）；放开档对照蜜标命中且拿到 `example.com` 真实标题；闸门对 `curl` 事件实测返回 block |
 | **L3 凭据** | 不让 agent 环境里有钥匙 + 硬拦凭据采集 | ✅ 实测 | agent 自测 `KEYLEN=0`（拿不到 key）而模型照常能调；`git credential fill` / `.ssh` / DPAPI 一律 deny |
 | **L4 宿主策略 + 闸门** | fail-closed、canary、看门狗 | ✅ 实测 | 宿主对 hook 异常是 fail-open（6/6 场景全放行），所以闸门必须自己坏了自己拒 |
 | **L5 域外监督** | 跑前记基线、跑后比对，变了标 tainted | ✅ 实测 | 运行中改 `package.json` → tainted，退出码 11 |
