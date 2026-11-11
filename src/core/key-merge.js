@@ -63,16 +63,75 @@ export function getJsonNamespace(text, key) {
 /** TOML：设置一个顶层键（已存在则原地替换那一行，否则插到第一个 [table] 之前） */
 export function setTomlKey(text, key, valueLiteral) {
   const src = String(text ?? "").replace(/\r\n/g, "\n");
-  const re = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=.*$`, "m");
+  const esc = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^${esc}\\s*=.*$`, "m");
   const line = `${key} = ${valueLiteral}`;
-  if (re.test(src)) return src.replace(re, line);
-  const lines = src.split("\n");
-  const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
-  if (firstTable < 0) return (src.trimEnd() ? src.trimEnd() + "\n" : "") + line + "\n";
-  const head = lines.slice(0, firstTable);
-  const tail = lines.slice(firstTable);
-  while (head.length && head[head.length - 1].trim() === "") head.pop();
-  return [...head, line, "", ...tail].join("\n");
+
+  /** 插到第一个 [table] 之前（根区），没有 table 就追加到末尾 */
+  const insertAtRoot = (base) => {
+    const lines = base.split("\n");
+    const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
+    if (firstTable < 0) return (base.trimEnd() ? base.trimEnd() + "\n" : "") + line + "\n";
+    const head = lines.slice(0, firstTable);
+    const tail = lines.slice(firstTable);
+    while (head.length && head[head.length - 1].trim() === "") head.pop();
+    return [...head, line, "", ...tail].join("\n");
+  };
+
+  if (re.test(src)) {
+    // 位置自愈：若该键现在落在某个 [table] 之后，它其实属于那个 table（宿主会忽略），
+    // 原地替换只会把错位永久保留下来 —— 必须先删掉再按根键重新插入。
+    const misplaced = findMisplacedRootKeys(src).some((b) => b.key === key);
+    if (misplaced) {
+      const removed = src.replace(new RegExp(`^${esc}\\s*=.*\\n?`, "m"), "");
+      return insertAtRoot(removed);
+    }
+    return src.replace(re, line);
+  }
+  return insertAtRoot(src);
+}
+
+/**
+ * Codex 的已知根键。只查这些：section 内部的键（比如 [model_providers.deepseek] 的 name/base_url）
+ * 看着和根键一模一样，纯文本无法区分，所以必须靠"这个键本来该在哪一层"来判断。
+ */
+export const KNOWN_ROOT_KEYS = [
+  "approval_policy", "sandbox_mode", "model", "model_provider", "model_reasoning_effort",
+  "model_reasoning_summary", "model_verbosity", "model_context_window", "model_max_output_tokens",
+  "review_model", "disable_response_storage", "windows_wsl_setup_acknowledged", "hide_agent_reasoning",
+  "notify", "instructions", "developer_instructions", "file_opener", "commit_attribution",
+];
+
+/**
+ * 找出"落在某个 [table] 之后却本该是根键"的行。
+ *
+ * 为什么必须查：TOML 里 [section] 之后的裸键属于该 section，于是
+ * `model = "..."` 写在 [model_providers.deepseek] 之后就成了 model_providers.deepseek.model，
+ * codex 报 "is ignored" 后**静默改用默认模型** —— 表现是请求全超时/Reconnecting，
+ * 极难联想到是"行放错了位置"（真踩过）。
+ *
+ * @param {string} text  TOML 文本
+ * @param {string[]} rootKeys  要查的键（默认 KNOWN_ROOT_KEYS）
+ */
+export function findMisplacedRootKeys(text, rootKeys = KNOWN_ROOT_KEYS) {
+  const want = new Set(rootKeys);
+  const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+  const seenTable = [];
+  const bad = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const t = line.match(/^\[([^\]]+)\]/);
+    if (t) {
+      seenTable.push(t[1]);
+      continue;
+    }
+    if (!seenTable.length) continue; // 还在根区，位置本来就对
+    const kv = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+    if (!kv || !want.has(kv[1])) continue;
+    bad.push({ key: kv[1], afterTable: seenTable[seenTable.length - 1] });
+  }
+  return bad;
 }
 
 export function getTomlKey(text, key) {

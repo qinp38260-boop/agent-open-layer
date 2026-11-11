@@ -11,7 +11,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { AdapterError, ErrorCode } from "../types.js";
 import { readOrNull, sha256, safeWrite } from "../../core/safe-write.js";
-import { setTomlKey, getTomlKey, removeTomlKey } from "../../core/key-merge.js";
+import { setTomlKey, getTomlKey, removeTomlKey , findMisplacedRootKeys } from "../../core/key-merge.js";
 import { runHost } from "../../core/host-cli.js";
 
 const stateFileFor = (configPath) => `${configPath}.oag-state.json`;
@@ -175,6 +175,15 @@ export function codexAdapter(options = {}) {
       if (!keys.length) return { ok: false, skipped: true, reason: "payload 未声明 patch.toml → 未验证" };
       for (const k of keys) {
         if (getTomlKey(text, k) === undefined) return { ok: false, reason: `键 ${k} 不在文件里` };
+      }
+      // 键在 ≠ 键生效：落在 [section] 之后的裸键会被算进那个 section，
+      // 宿主报 "is ignored" 后静默用默认值（model 键踩过这条，表现为请求全超时）
+      const misplaced = findMisplacedRootKeys(text);
+      if (misplaced.length) {
+        return {
+          ok: false,
+          reason: `有 ${misplaced.length} 个根键落在 [${misplaced[0].afterTable}] 之后，会被宿主导为该 section 下的键并忽略：${misplaced.map((m) => m.key).join(", ")}`,
+        };
       }
       return { ok: true, source: "file-readback" };
     },
