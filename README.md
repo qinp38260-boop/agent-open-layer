@@ -4,6 +4,8 @@
 >
 > **仓库边界**：公开库只放项目本体（代码/文档/测试/无密钥验证）；真实运行（带密钥、真模型、真数据）只在私库 —— 见 `docs/REPO-POLICY.md`。
 >
+> **MCP 工具**：`mcp__server__tool` 需在策略 `mcp` 段声明能力，未声明即拒（见 `docs/MCP.md`）。
+>
 > **运行前提**：闸门现在要求会话票据——必须用 `oag run -- <命令>` 启动，裸跑宿主会被全拒（见 `docs/SESSION-BIND.md`）。
 >
 > **This is not a security sandbox.** On a Windows box without administrator rights this project gives you

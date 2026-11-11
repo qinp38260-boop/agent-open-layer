@@ -1,0 +1,57 @@
+{
+  "_说明": "MCP 工具声明示例：未声明的 MCP 工具一律拒绝；读写类必须给 paths 且能从入参抽到目标",
+  "version": 1,
+  "rules": [
+    {
+      "action": "READ",
+      "decision": "allow",
+      "scope": {
+        "paths": [
+          "/srv/agent-work/**"
+        ]
+      }
+    },
+    {
+      "action": "WRITE",
+      "decision": "allow",
+      "scope": {
+        "paths": [
+          "/srv/agent-work/**"
+        ]
+      }
+    },
+    {
+      "action": "EXEC_SAFE",
+      "decision": "allow",
+      "scope": {}
+    },
+    {
+      "action": "EXEC_DESTRUCTIVE",
+      "decision": "deny",
+      "scope": {}
+    },
+    {
+      "action": "NET",
+      "decision": "deny",
+      "scope": {}
+    }
+  ],
+  "mcp": {
+    "files/read_file": {
+      "action": "READ",
+      "paths": [
+        "/srv/agent-work/**"
+      ]
+    },
+    "files/write_file": {
+      "action": "WRITE",
+      "paths": [
+        "/srv/agent-work/**"
+      ]
+    },
+    "codex_apps/*": {
+      "action": "NET",
+      "decision": "deny"
+    }
+  }
+}

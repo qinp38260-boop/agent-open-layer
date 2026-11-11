@@ -21,6 +21,7 @@ import { spawnSync, execFileSync } from "node:child_process";
 import { decisionTable, policyRef, collectRoots } from "../../core/policy.js";
 import { normalizeToolCall, actionFor, scopedOps, normPath, payloadText, hasDynamicPath, PERSISTENCE_RE } from "../../core/actions.js";
 import { issueSession, SESSION_ENV } from "../../core/session.js";
+import { judgeMcpCall } from "../../core/mcp.js";
 
 export const GUARD_SCRIPT = "oag-guard.mjs";
 export const SHIM_SCRIPT = "oag-shim.mjs";
@@ -38,6 +39,14 @@ export function classify({ toolName, command, policy, cwd, input, canon }) {
   const { op, targets, why } = normalizeToolCall({ toolName, command: text, cwd });
   const action = actionFor(op);
   const decision = table[action] ?? "allow";
+
+  // MCP 工具（mcp__server__tool）：黑盒，只按策略里声明的能力判定；没声明就拒。
+  // 必须放在通用 scoped 判定之前 —— 否则工具名里带 read/write 会先被规则白名单吃掉，
+  // 声明的 paths 也就不起作用了（实测踩到）。
+  if (String(toolName ?? "").startsWith("mcp__")) {
+    const m = judgeMcpCall({ policy, toolName, targets, normPath, canon: typeof canon === "function" ? canon : (x) => x });
+    return { op: "mcp", action: m.action, decision: m.decision, targets, reason: m.reason };
+  }
 
   if (scopedOps().includes(op)) {
     // 动态拼接的路径静态判定不了：放行等于开一条免检通道，按保守方向拒
@@ -60,6 +69,8 @@ export function classify({ toolName, command, policy, cwd, input, canon }) {
     return { op, action, decision: "deny", targets, reason: op === "spawn_host" ? "疑似嵌套启动宿主以绕过闸门" : "疑似凭据采集" };
   }
 
+  // MCP 工具（mcp__server__tool）：黑盒，只按策略里声明的能力判定；没声明就拒
+
   // 非 Bash 且未能归类 = 未知工具（MCP、未来新增工具）：默认拒绝，避免"没规则=放行"
   if (op === "spawn_host" || op === "cred_read") {
     return { op, action, decision: "deny", targets, reason: op === "spawn_host" ? "疑似嵌套启动宿主以绕过闸门" : "疑似凭据采集" };
@@ -72,11 +83,14 @@ export function classify({ toolName, command, policy, cwd, input, canon }) {
 
 /** 安装时把 actions.js 内联进生成的脚本（脚本必须能独立运行） */
 function inlinedActions() {
-  const p = new URL("../../core/actions.js", import.meta.url);
-  let src = fs.readFileSync(p, "utf8");
-  src = src.replace(/^export\s+/gm, "");
-  src = src.replace(/^\/\*\*[\s\S]*?\*\/\s*/m, "");
-  return src;
+  const strip = (rel) => {
+    let src = fs.readFileSync(new URL(rel, import.meta.url), "utf8");
+    src = src.replace(/^export\s+/gm, "");
+    src = src.replace(/^\/\*\*[\s\S]*?\*\/\s*/m, "");
+    return src;
+  };
+  // 两个模块都要内联：闸门脚本必须能独立运行，不能 import 仓库文件
+  return [strip("../../core/actions.js"), strip("../../core/mcp.js")].join("\n");
 }
 
 export function guardScriptBody(policyPath, auditPath) {
@@ -151,6 +165,14 @@ function classify2({ toolName, command, policy, cwd, canon }) {
   const { op, targets, why } = normalizeToolCall({ toolName, command, cwd });
   const action = actionFor(op);
   const decision = table[action] ?? "allow";
+  // MCP 工具（mcp__server__tool）：黑盒，只按策略里声明的能力判定；没声明就拒。
+  // 必须放在通用 scoped 判定之前 —— 否则工具名里带 read/write 会先被规则白名单吃掉，
+  // 声明的 paths 也就不起作用了（实测踩到）。
+  if (String(toolName ?? "").startsWith("mcp__")) {
+    const m = judgeMcpCall({ policy, toolName, targets, normPath, canon: typeof canon === "function" ? canon : (x) => x });
+    return { op: "mcp", action: m.action, decision: m.decision, targets, reason: m.reason };
+  }
+
   if (scopedOps().includes(op)) {
     // 动态拼接的路径静态判定不了：放行等于开一条免检通道，按保守方向拒
     if (hasDynamicPath(command)) {
