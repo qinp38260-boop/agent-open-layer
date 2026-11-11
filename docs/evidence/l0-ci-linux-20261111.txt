@@ -1,0 +1,34 @@
+L0 主体隔离验收 —— GitHub Actions runner（一次性 Ubuntu，专用用户）
+run id 43021609938 | commit 9df78ae5 | 2026-11-11
+执行方式：root 建 useradd agent_runner + /srv 目录 → sudo -u agent_runner 跑脚本
+注意：这证明『机制在 OS 级隔离下成立』，不等于用户 Windows 本机已隔离。
+======================================================================
+=== identity ===
+  whoami=agent_runner  uid=1002
+
+=== 该允许的（工作目录内）===
+  ALLOWED  write /srv/agent-work/canary.txt
+  ALLOWED  read /srv/agent-work/canary.txt
+  ALLOWED  mkdir /srv/agent-work/sub/dir
+
+=== 该拒绝的（敏感区）===
+  BLOCKED  read /srv/secret/app.env
+scripts/l0-acceptance-linux.sh: line 27: /etc/oag-should-fail.txt: Permission denied
+  BLOCKED  write /etc/oag-should-fail.txt
+  BLOCKED  list ~/.ssh
+  BLOCKED  list /root
+scripts/l0-acceptance-linux.sh: line 33: /srv/gate/oag-guard.mjs: Permission denied
+
+scripts/l0-acceptance-linux.sh: line 34: /srv/gate/policy.json: Permission denied
+=== 抗篡改（闸门与被监控目录）===
+  BLOCKED  tamper /srv/gate/oag-guard.mjs
+  BLOCKED  tamper /srv/gate/policy.json
+  BLOCKED  delete /srv/gate/oag-guard.mjs
+  BLOCKED  overwrite /srv/gate/oag-guard.mjs
+
+=== 闸门本身能否以该身份运行（否则等于摆设）===
+  ALLOWED  run guard -> {"decision":"block","reason":"OAG_BIND 拒绝：没有会话票据（�
+
+=== summary ===
+  pass=12 fail=0
+2

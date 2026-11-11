@@ -76,56 +76,39 @@ shell 命令**。要真正区分，只能写 `Bash(git *)` 这种模式规则 �
 
 ---
 
-## 四、L0 主体隔离：账号已启用，但**审计发现隔离并不成立**
+## 四、L0 主体隔离
 
-### 4.1 已确认有效的部分
+### 4.1 已搬上 GitHub runner 实测通过（12/12）
 
-| 项 | 证据 |
+本机卡在"共享权限单盘 + 非管理员"，靠 ACL 划隔离既难做又会伤到主人账号 —— 所以把这一层
+搬到 runner 上做：一次性 Ubuntu，root 建 `agent_runner`（uid 1002）、`/srv/agent-work` 归它，
+闸门与策略**属主 root、agent 只读**，然后 `sudo -u agent_runner` 跑验收。
+
+| 判据 | 结果 |
 |---|---|
-| 账号 | `net user agent_runner` → 账户启用 **Yes**（用户已提权启用） |
-| 密钥 | `.env` 上 `agent_runner:(N)` → 读不到 |
-| 闸门文件 | `oag-guard.mjs` / `policy.json` 上 `agent_runner:(RX)` → 文件级不可写 |
-| 用户目录 | `C:\Users\p1553` 上无 agent_runner 的 ACE |
+| 工作目录写 / 读 / 建子目录 | ALLOWED ✅ |
+| 读 `/srv/secret/app.env`（0600 root） | **BLOCKED** ✅ |
+| 写 `/etc/oag-should-fail.txt` | **BLOCKED** ✅ |
+| 列 `~/.ssh` / 列 `/root` | **BLOCKED** ✅ |
+| 改 / 删 / 覆盖 闸门脚本 | **BLOCKED** ✅（抗篡改在 OS 级成立） |
+| 改 策略文件 | **BLOCKED** ✅ |
+| 闸门能否以该身份运行 | ALLOWED（返回 `OAG_BIND 拒绝：没有会话票据` —— 绑定层也生效） ✅ |
 
-### 4.2 发现的真问题（此前 14 项验收没覆盖）
+**pass=12 fail=0**。证据：`docs/evidence/l0-ci-linux-20261111.txt`（run 43021609938）。
+工作流 `.github/workflows/l0-acceptance.yml`：手动触发 + **每周一自动复验**。
 
-`D:\` 根 ACL 含 **`Authenticated Users:(OI)(CI)(M)`** —— agent_runner 是已认证用户，
-继承该权限后**对整个 D 盘可写**（`D:\temp`、`D:\openlib` 等）。
+### 4.2 本机（Windows）现状：隔离仍不成立
 
-此前的验收清单只测了 `C:\` 下的目标（用户目录 / 系统目录 / `.env`），
-所以一路“BLOCKED”，看不出这个洞。
+`D:\` 根含 `Authenticated Users:(OI)(CI)(M)` → `agent_runner` 可写 D 盘任意位置。
+而且主人自己的 D 盘写权限也来自同一条 ACE，所以「把根降成 RX」会先拦住主人 —— **默认不动**。
 
-**准确结论：L0 目前 = “挡住 C:\ 敏感区”，≠ “只能写工作目录”。**
+**但这层的重要性已被削弱**：会话强绑定（`OAG_BIND`）要求票据，没有票据的宿主连读都被拒，
+而票据只有 `oag run` 会发（本机实测：裸跑 codex → 金丝雀未创建）。
 
-还有一个未验证点：`.codex` 文件虽是 `agent_runner:(RX)`，但父目录给了它 `(M)`，
-Windows 上“能否删除子文件”取决于父目录的 DELETE_CHILD，**需以该账号实跑确认**（缺口令）。
+### 4.3 方法上的结论
 
-### 4.3 修复方案：**原方案已否决（会伤到主人账号）**
-
-第一版方案是「D 盘根 Authenticated Users 从 (M) 降为 (RX)」。实测后**撤回**：
-
-```
-D:\Programs\hermes_data / D:\openlib / D:\wechat-scanner / D:\temp
-  → 全部只有 Authenticated Users:(I)(M)，没有任何 p1553 的显式 ACE
-```
-
-也就是说，**主人自己的 D 盘写权限也来自同一条继承 ACE**。降级后第一个被拦住的是主人，
-不是 agent。这是"装锁把自家门焊死"。
-
-更根本的限制：显式 deny 会继承到子目录且无法被子目录的 allow 覆盖，
-所以"给一个标准用户划一小块地盘、其余锁死"在**共享权限的单盘**上靠 ACL 做不到。
-
-**修正后的可选方案**（仅在确实需要时执行，需管理员，含备份与回滚）：
-先给 p1553 补显式 (M) → 再把根上 Authenticated Users 降 (RX) → 工作目录破继承。
-清单与回滚见桌面 `L0隔离说明_含可选方案.txt`。
-
-**默认建议：不动 D 盘权限。** 单用户机器上，这种改动的破坏面大于收益。
-日常降风险用零副作用的一条：`net user agent_runner /active:no`（用时再开）。
-
-### 4.4 行为验收（14 项）未做
-
-必须以 agent_runner 身份实跑 `D:\agent-work\_run.cmd`（脚本内 9 处过期路径已改好）。
-缺口令 → **未做**，因此 L0 仍标 `config-only`，不升级。
+**能搬到算力上验证的，就不要在自己机器上冒险。** 隔离、抗篡改、越权访问这类"需要干净环境
+才能证明"的事，一次性 runner 比本地折腾 ACL 更可信、更省事、还更安全（跑完即销毁）。
 
 ## 五、当前整体状态
 
