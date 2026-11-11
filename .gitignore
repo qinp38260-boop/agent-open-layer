@@ -4,3 +4,7 @@ node_modules/
 .dsh-open.tmp
 .DS_Store
 Thumbs.db
+
+# 本地工具依赖（不进仓库）
+tools/node_modules/
+tools/package*.json

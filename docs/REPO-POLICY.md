@@ -32,3 +32,19 @@
 - 公开库 workflow 里出现 `secrets.` 一律视为违规，需改为私库执行或跳过
 - 公开库 `.github/workflows/*.yml` 只允许：test / l0-acceptance / l2-egress / agent-run-linux（无密钥通道验证）
 - 新增流水线前先问一句：**它需要凭据吗？** 需要 → 私库
+
+## 密钥口径（用户 2026-11-11 定）
+
+> **运行的时候再配 secret；不明文；只在需要运行时再配。**
+
+具体执行：
+
+| 规则 | 说明 |
+|---|---|
+| 不常驻 | 私库 App 也**不长期挂着**密钥；平时不配，需要跑时再配 |
+| 跑完即删 | 一次运行结束立刻删除该 secret，不给下次误用留机会 |
+| 不明文 | 密钥只从本机 `.env` 读出 → 直接经由 `gh secret set` 加密写入 → 进程内用完丢弃；不写日志、不进 git、不落临时文件 |
+| 公开库永不配 | 公开库任何情况下不出现 secret（已核：当前 `workflows/*.yml` 无 `secrets.*`） |
+
+配套脚本：`scripts/run-with-ephemeral-secret.mjs`（set → 触发 workflow → 等结果 → **删 secret**；
+仓库不是 private 直接拒绝执行）。
