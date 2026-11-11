@@ -10,7 +10,7 @@ const GOOD = `=== identity ===
 whoami: PC\agent_runner
 isAdmin: False
 
-write D:\work\l0-ok.txt : ALLOWED
+write D:/agent-work\l0-ok.txt : ALLOWED
 read hermes_data\.env : BLOCKED :: UnauthorizedAccessException
 write C:\Users\p1553_x.txt : BLOCKED :: UnauthorizedAccessException
 list C:\Users\p1553\.ssh : BLOCKED :: UnauthorizedAccessException
@@ -53,7 +53,7 @@ test("反例：敏感项没被拦住 → 不通过", () => {
 });
 
 test("反例：工作区写也失败 → 沙箱账号没法干活，不通过", () => {
-  const bad = GOOD.replace("write D:\work\l0-ok.txt : ALLOWED", "write D:\work\l0-ok.txt : BLOCKED");
+  const bad = GOOD.replace("write D:/agent-work\l0-ok.txt : ALLOWED", "write D:/agent-work\l0-ok.txt : BLOCKED");
   const r = judgeL0({ evidencePath: tmp(bad), account: "agent_runner", accountState: { exists: true, enabled: true } });
   assert.equal(r.ok, false);
   assert.match(r.reason, /工作目录写/);
