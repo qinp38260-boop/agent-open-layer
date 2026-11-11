@@ -19,7 +19,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync, execFileSync } from "node:child_process";
 import { decisionTable, policyRef, collectRoots } from "../../core/policy.js";
-import { normalizeToolCall, actionFor, scopedOps, normPath, payloadText, PERSISTENCE_RE } from "../../core/actions.js";
+import { normalizeToolCall, actionFor, scopedOps, normPath, payloadText, hasDynamicPath, PERSISTENCE_RE } from "../../core/actions.js";
 
 export const GUARD_SCRIPT = "oag-guard.mjs";
 export const SHIM_SCRIPT = "oag-shim.mjs";
@@ -39,6 +39,10 @@ export function classify({ toolName, command, policy, cwd, input, canon }) {
   const decision = table[action] ?? "allow";
 
   if (scopedOps().includes(op)) {
+    // 动态拼接的路径静态判定不了：放行等于开一条免检通道，按保守方向拒
+    if (hasDynamicPath(text)) {
+      return { op, action, decision: "deny", targets, reason: "路径是运行时拼接的（$env:/%VAR%/Join-Path），无法静态判定范围" };
+    }
     const fix = typeof canon === "function" ? canon : (x) => x;
     const roots = collectRoots(policy, op === "read" ? "READ" : "WRITE").map((r) => normPath(fix(r)));
     if (roots.length) {
@@ -115,6 +119,10 @@ function classify2({ toolName, command, policy, cwd, canon }) {
   const action = actionFor(op);
   const decision = table[action] ?? "allow";
   if (scopedOps().includes(op)) {
+    // 动态拼接的路径静态判定不了：放行等于开一条免检通道，按保守方向拒
+    if (hasDynamicPath(command)) {
+      return { op, action, decision: "deny", targets, reason: "路径是运行时拼接的（$env:/%VAR%/Join-Path），无法静态判定范围" };
+    }
     const fix = typeof canon === "function" ? canon : (x) => x;
     const roots = rootsOf(policy, op === "read" ? "READ" : "WRITE").map((r) => normPath(fix(r)));
     if (roots.length) {

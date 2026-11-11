@@ -156,7 +156,7 @@ const INTENT = [
   },
 ];
 
-const ABS = /(?:^|[\s"'"(=:,])((?:[\\/]{2}[?.][\\/]?)?(?:[A-Za-z]:[\\/]|~[\\/]|\/(?:[\w.-]+\/)*)[^\s"'()|;&]*)/g;
+const ABS = /(?:^|[\s"'"(=:,])((?:[\\/]{2}[?.][\\/][^\s"'()|;&]*|[\\/]{2}[^\\/\s"'()|;&]+\\[^\s"'()|;&]*|(?:[A-Za-z]:[\\/]|~[\\/]|\/(?:[\w.-]+\/)*)[^\s"'()|;&]*))/g;
 
 /**
  * 路径归一：反斜杠 + 去尾斜杠 + 小写，并且**解析 . 与 ..**、拆掉 Windows 的几层伪装
@@ -235,6 +235,11 @@ export function extractTargets(text, cwd) {
   for (const m of s.matchAll(ABS)) {
     let raw = m[1].replace(/[;,)]+$/, "");
     if (!raw) continue;
+    // URL 的 "//host/x" 会被当成 UNC/POSIX 路径：前面是 ":/" 的一律跳过（http:// https:// file://）
+    const at = m.index + m[0].indexOf(m[1]);
+    if (at >= 2 && s.slice(at - 2, at) === ":/") continue;
+    // 正斜杠的 "//host/x" 是 URL（真 UNC 用反斜杠）；不跳会让 curl https://... 被当成写根外
+    if (raw.startsWith("//") && !raw.includes(String.fromCharCode(92))) continue;
     // Windows 开关（cmd /c、/s、/q、/f…）不是路径：实测 `cmd /c echo x > f` 会把 "/c" 抽成目标，
     // 判成"根外"→ 整条合法命令被误拦。
     if (/^\/[a-zA-Z]{1,3}$/.test(raw)) continue;
@@ -248,6 +253,17 @@ export function extractTargets(text, cwd) {
     if (raw && !/^[A-Za-z]:[\\/]/.test(raw)) out.add(normPath(joinPath(cwd, raw)));
   }
   return [...out];
+}
+
+/**
+ * 动态拼接的路径（$env: / %VAR% / Join-Path / $( ... )）：静态解析不了，
+ * 也就是说"目标集"是空的 —— 若按"没抽到目标就放行"处理，等于给了一条免检通道。
+ * 实测：`Set-Content -Path (Join-Path $env:USERPROFILE '..\\Windows\\x.txt')` 原本直接放行。
+ */
+const DYNAMIC_PATH = /\$env:|%[A-Za-z_][A-Za-z0-9_]*%|join-path|resolve-path|\$\(|`[^`]*\$\{/i;
+
+export function hasDynamicPath(text) {
+  return DYNAMIC_PATH.test(String(text ?? ""));
 }
 
 /** 归一：任何工具调用 → { op, targets, why } */

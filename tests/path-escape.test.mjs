@@ -113,3 +113,47 @@ test("realpath 折祖先：目标文件不存在时也要折（新建文件是�
   assert.ok(got.toLowerCase().startsWith(fs.realpathSync.native(tmp).toLowerCase()), `折错了：${got}`);
   assert.ok(got.toLowerCase().endsWith("no-such-file.txt"));
 });
+
+/* ---------- 同类绕过清单（ESCAPE-TODO.md）实测后固化的几条 ---------- */
+import { extractTargets, hasDynamicPath } from "../src/core/actions.js";
+
+test("UNC 管理共享与 \\?\UNC 必须被当成目标（原先抽不出来 → 直接放行）", () => {
+  const BS = String.fromCharCode(92);
+  const unc = `${BS}${BS}localhost${BS}D$${BS}Windows${BS}x.txt`;
+  const exts = extractTargets(`Set-Content -Path ${unc} -Value hi`, "D:/agent-work");
+  assert.ok(exts.some((x) => x.includes("localhost")), `没抽到 UNC：${JSON.stringify(exts)}`);
+  const r = classify({ toolName: "shell", command: `Set-Content -Path ${unc} -Value hi`, policy: POLICY, cwd: ROOT });
+  assert.equal(r.decision, "deny", r.reason);
+});
+
+test("UNC 下普通 http URL 不能被误当本地路径", () => {
+  const exts = extractTargets("curl https://api.github.com/zen", "D:/agent-work");
+  assert.ok(!exts.some((x) => x.startsWith("/localhost") || x.includes("api.github.com")), `URL 被当路径：${JSON.stringify(exts)}`);
+});
+
+test("$env / Join-Path 这类运行时拼接：静态判不了就拒（否则等于免检通道）", () => {
+  const cmd = "Set-Content -Path (Join-Path $env:USERPROFILE '.." + String.fromCharCode(92) + "Windows" + String.fromCharCode(92) + "x.txt') -Value hi";
+  assert.equal(hasDynamicPath(cmd), true);
+  const r = classify({ toolName: "shell", command: cmd, policy: POLICY, cwd: ROOT });
+  assert.equal(r.decision, "deny", r.reason);
+  assert.match(r.reason, /运行时拼接/);
+});
+
+test("8.3 短名穿越：靠 .. 解析拦住（短名本身不影响判定）", () => {
+  const BS = String.fromCharCode(92);
+  const r = classify({
+    toolName: "shell",
+    command: `Set-Content -Path D:${BS}AGENTW~1${BS}..${BS}Windows${BS}x.txt -Value hi`,
+    policy: POLICY, cwd: ROOT,
+  });
+  assert.equal(r.decision, "deny", r.reason);
+});
+
+test("Move-Item 跨根：目标在根外必须拦", () => {
+  const r = classify({
+    toolName: "shell",
+    command: "Move-Item D:/agent-work/a.txt D:/Windows/a.txt",
+    policy: POLICY, cwd: ROOT,
+  });
+  assert.equal(r.decision, "deny", r.reason);
+});
