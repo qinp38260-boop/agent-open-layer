@@ -66,14 +66,14 @@ export function judgeNet({ restrictPath = DEFAULT_RESTRICT, controlPath = DEFAUL
  * 兜底一层：宿主沙箱被绕过时，闸门至少要在动作层拦住联网命令。
  * 这里真跑一次闸门（合成一个 curl 事件），看它是否返回 block —— 不是读代码判断。
  */
-export function probeGuardNet({ codexHome = process.env.OAG_CODEX_HOME || "D:/work/.codex" } = {}) {
+export function probeGuardNet({ codexHome = process.env.OAG_CODEX_HOME || "D:/agent-work/.codex" } = {}) {
   const guard = path.join(codexHome, "oag-guard.mjs");
   if (!fs.existsSync(guard)) return { ok: null, status: "missing", reason: `没装闸门：${guard}` };
   const event = JSON.stringify({
     hook_event_name: "PreToolUse",
     tool_name: "Bash",
     tool_input: { command: "curl -s https://api.github.com/zen" },
-    cwd: "D:/work",
+    cwd: "D:/agent-work",
   });
   const r = spawnSync(process.execPath, [guard], {
     input: event,

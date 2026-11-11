@@ -23,7 +23,7 @@
 - `sandbox/wsl-sandbox.ps1`：WSL2 一次性发行版（up/exec/down/status）
 - `sandbox/agent.wsb`：Windows Sandbox（只读挂载工作副本；需 Pro/Enterprise）
 
-**本机已落地**：账号 `agent_runner`（非管理员）+ `D:\work` 授权 Modify + 敏感路径 DENY；
+**本机已落地**：账号 `agent_runner`（非管理员）+ `D:/agent-work` 授权 Modify + 敏感路径 DENY；
 以该身份实测 9 项：工作区可写、敏感读写 / 系统目录 / 闸门篡改全部被拒。
 证据见 `docs/evidence/l0-acceptance-v2-20261111.txt`。
 
