@@ -5,9 +5,9 @@
 ## 一次完整运行（真机记录）
 
 ```bash
-oag run --cwd D:/work/repo-demo --codex-home D:/work/.codex \
-        --policy D:/work/.codex/policy.json \
-        --snapshot D:/work/repo-demo --fail-on-taint \
+oag run --cwd D:/agent-work/repo-demo --codex-home D:/agent-work/.codex \
+        --policy D:/agent-work/.codex/policy.json \
+        --snapshot D:/agent-work/repo-demo --fail-on-taint \
         -- <要跑的命令>
 ```
 
@@ -15,9 +15,9 @@ oag run --cwd D:/work/repo-demo --codex-home D:/work/.codex \
 
 ```
 监督运行  监控 7 个路径，canary 先过
-  退出码：11  快照：D:\work\repo-demo\.oag-snapshots\pre-run-2026-11-10T19-34-27-724Z.bundle
+  退出码：11  快照：D:\agent-work\repo-demo\.oag-snapshots\pre-run-2026-11-10T19-34-27-724Z.bundle
 ⚠ tainted：运行期间有 1 个被监控文件发生变化
-    [modified] D:\work\repo-demo\package.json
+    [modified] D:\agent-work\repo-demo\package.json
 ```
 
 ## 四步
