@@ -1,0 +1,169 @@
+{
+  "at": "2026-11-11T11:36:56.844Z",
+  "kind": "allow",
+  "n": 20,
+  "pass": 20,
+  "medianSecs": 14.3,
+  "rows": [
+    {
+      "i": 1,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 15.2,
+      "exit": 0
+    },
+    {
+      "i": 2,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.1,
+      "exit": 0
+    },
+    {
+      "i": 3,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 13.9,
+      "exit": 0
+    },
+    {
+      "i": 4,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.7,
+      "exit": 0
+    },
+    {
+      "i": 5,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.6,
+      "exit": 0
+    },
+    {
+      "i": 6,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.5,
+      "exit": 0
+    },
+    {
+      "i": 7,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.1,
+      "exit": 0
+    },
+    {
+      "i": 8,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 15.8,
+      "exit": 0
+    },
+    {
+      "i": 9,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.7,
+      "exit": 0
+    },
+    {
+      "i": 10,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 13.9,
+      "exit": 0
+    },
+    {
+      "i": 11,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 13.5,
+      "exit": 0
+    },
+    {
+      "i": 12,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 13.8,
+      "exit": 0
+    },
+    {
+      "i": 13,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.3,
+      "exit": 0
+    },
+    {
+      "i": 14,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14,
+      "exit": 0
+    },
+    {
+      "i": 15,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.1,
+      "exit": 0
+    },
+    {
+      "i": 16,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.8,
+      "exit": 0
+    },
+    {
+      "i": 17,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.9,
+      "exit": 0
+    },
+    {
+      "i": 18,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 13.9,
+      "exit": 0
+    },
+    {
+      "i": 19,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 15.2,
+      "exit": 0
+    },
+    {
+      "i": 20,
+      "canaryCreated": true,
+      "blockedMsg": false,
+      "ok": true,
+      "secs": 14.3,
+      "exit": 0
+    }
+  ]
+}
