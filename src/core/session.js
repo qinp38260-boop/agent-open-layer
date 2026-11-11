@@ -36,6 +36,28 @@ export function policyRef(policyText) {
   return crypto.createHash("sha256").update(String(policyText ?? "")).digest("hex").slice(0, 16);
 }
 
+/** 清理过期票据（避免 .oag-sessions 越积越多；只删已过期/已冻结的） */
+export function pruneSessions(dir, now = Date.now()) {
+  let removed = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue;
+      const p = path.join(dir, f);
+      try {
+        const t = JSON.parse(fs.readFileSync(p, "utf8"));
+        const age = (now - Date.parse(t.startedAt)) / 1000;
+        if (t.frozen || !Number.isFinite(age) || age > (t.ttlSec ?? DEFAULT_TTL_SEC)) {
+          fs.unlinkSync(p);
+          removed++;
+        }
+      } catch {
+        try { fs.unlinkSync(p); removed++; } catch {}
+      }
+    }
+  } catch {}
+  return removed;
+}
+
 /** 签发会话票据 */
 export function issueSession({ codexHome = "", policyPath = "", dir = "", ttlSec = DEFAULT_TTL_SEC, maxDenies = DEFAULT_MAX_DENIES, policy } = {}) {
   const sid = crypto.randomUUID();
@@ -51,6 +73,7 @@ export function issueSession({ codexHome = "", policyPath = "", dir = "", ttlSec
   };
   const _dir = dir || sessionsDir({ codexHome, policyPath });
   fs.mkdirSync(_dir, { recursive: true });
+  pruneSessions(_dir); // 先清掉过期/冻结的旧票据
   t.dir = _dir;
   fs.writeFileSync(ticketPath(_dir, sid), JSON.stringify(t, null, 2), "utf8");
   return t;
