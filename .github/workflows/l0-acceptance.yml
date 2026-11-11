@@ -1,0 +1,75 @@
+name: l0-acceptance
+
+# 为什么放这里而不是本机：
+#   本机是"共享权限的单盘 + 非管理员"，靠 ACL 划隔离既难做又会伤到主人账号；
+#   runner 是一次性 Linux 环境，能建独立用户、能 sudo，跑完即销毁。
+# 这条流水线验证 **机制在 OS 级隔离下成立**，不代表用户本机已经隔离。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+jobs:
+  linux-l0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 准备独立用户 / 目录 / 密钥 / 策略（root）
+        run: |
+          set -eux
+          sudo useradd -m -s /bin/bash agent_runner
+          sudo mkdir -p /srv/agent-work /srv/gate /srv/secret
+          sudo chown -R agent_runner:agent_runner /srv/agent-work
+          sudo chmod 700 /srv/agent-work
+          cat > /tmp/policy.json <<'JSON'
+          {"version":1,"rules":[
+            {"action":"WRITE","decision":"allow","scope":{"paths":["/srv/agent-work/**"]}},
+            {"action":"READ","decision":"allow","scope":{"paths":["/srv/agent-work/**"]}},
+            {"action":"EXEC_SAFE","decision":"allow","scope":{}},
+            {"action":"EXEC_DESTRUCTIVE","decision":"deny","scope":{}},
+            {"action":"NET","decision":"deny","scope":{}}
+          ]}
+          JSON
+          sudo cp /tmp/policy.json /srv/gate/policy.json
+          sudo chmod 644 /srv/gate/policy.json
+          echo "SECRET=hunter2" | sudo tee /srv/secret/app.env >/dev/null
+          sudo chown root:root /srv/secret/app.env
+          sudo chmod 600 /srv/secret/app.env
+
+      - name: 生成闸门脚本（属主 root、agent 只读）
+        run: |
+          set -eux
+          mkdir -p "$PWD/.codex-ci"
+          node -e 'import("./src/adapter/codex/guard.js").then(m => m.install({ codexHome: process.cwd() + "/.codex-ci", policyPath: "/tmp/policy.json", auditPath: "/tmp/audit.jsonl" }))'
+          test -f "$PWD/.codex-ci/oag-guard.mjs"
+          sudo cp "$PWD/.codex-ci/oag-guard.mjs" /srv/gate/oag-guard.mjs
+          sudo chown root:root /srv/gate/oag-guard.mjs
+          sudo chmod 755 /srv/gate/oag-guard.mjs
+          sudo chmod 755 /usr/bin/node || true
+          node --version
+
+      - name: 以 agent_runner 身份跑验收
+        id: accept
+        run: |
+          set -o pipefail
+          sudo -u agent_runner env WORK=/srv/agent-work GUARD=/srv/gate/oag-guard.mjs \
+            POLICY=/srv/gate/policy.json SECRET=/srv/secret/app.env \
+            bash scripts/l0-acceptance-linux.sh | tee /tmp/l0.txt
+        continue-on-error: true
+
+      - name: 结论
+        run: |
+          echo "退出码: ${{ steps.accept.outcome }}"
+          grep -E "pass=|!!" /tmp/l0.txt || true
+          test "${{ steps.accept.outcome }}" = "success"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l0-acceptance
+          path: /tmp/l0.txt
