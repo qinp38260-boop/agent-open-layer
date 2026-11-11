@@ -20,6 +20,7 @@ import os from "node:os";
 import { spawnSync, execFileSync } from "node:child_process";
 import { decisionTable, policyRef, collectRoots } from "../../core/policy.js";
 import { normalizeToolCall, actionFor, scopedOps, normPath, payloadText, hasDynamicPath, PERSISTENCE_RE } from "../../core/actions.js";
+import { issueSession, SESSION_ENV } from "../../core/session.js";
 
 export const GUARD_SCRIPT = "oag-guard.mjs";
 export const SHIM_SCRIPT = "oag-shim.mjs";
@@ -91,6 +92,38 @@ ${inlinedActions()}
 // ===== 内联结束 =====
 
 const path = { resolve: (p) => nodePath.resolve(p), dirname: (p) => nodePath.dirname(p) };
+
+// ========================= 会话强绑定（OAG_BIND） =========================
+// 闸门不能是"装上去可以被绕"的挂件：没有 wrapper 签发的票据 → 一律拒绝。
+const SID = process.env.OAG_SESSION || "";
+const SESS_DIR = ${JSON.stringify(path.join(path.dirname(policyPath), ".oag-sessions"))};
+const TICKET = SID ? nodePath.join(SESS_DIR, SID + ".json") : "";
+function readTicket() { try { return JSON.parse(fs.readFileSync(TICKET, "utf8")); } catch { return null; } }
+function writeTicket(t) { try { fs.writeFileSync(TICKET, JSON.stringify(t, null, 2)); } catch {} }
+function bindCheck() {
+  if (!SID) return { ok: false, reason: "没有会话票据（未经 oag run 启动）" };
+  const t = readTicket();
+  if (!t) return { ok: false, reason: "票据不存在：" + SID };
+  if (t.frozen) return { ok: false, reason: "会话已冻结：" + (t.frozenReason || "") };
+  const age = (Date.now() - Date.parse(t.startedAt)) / 1000;
+  if (!Number.isFinite(age) || age > t.ttlSec) return { ok: false, reason: "票据已过期" };
+  return { ok: true, ticket: t };
+}
+function tickDeny(reason) {
+  const t = readTicket();
+  if (!t) return null;
+  t.denies = (t.denies || 0) + 1;
+  t.lastDenyReason = String(reason || "").slice(0, 200);
+  t.lastDenyAt = new Date().toISOString();
+  if (t.maxDenies && t.denies >= t.maxDenies) {
+    t.frozen = true;
+    t.frozenAt = new Date().toISOString();
+    t.frozenReason = "越界 " + t.denies + " 次，达到上限 " + t.maxDenies;
+  }
+  writeTicket(t);
+  return t;
+}
+// ========================================================================
 
 function rootsOf(policy, action) {
   const out = [];
@@ -202,6 +235,22 @@ function run() {
   let policy = { rules: [] };
   try { policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8")); } catch { return failClosed("策略文件读不到或不是合法 JSON：" + POLICY_PATH); }
   // 入参里所有字符串字段都摊进来：apply_patch 的补丁正文在 input 里，只读 command 等于不判
+  const bind = bindCheck();
+  if (!bind.ok) {
+    try {
+      fs.mkdirSync(nodePath.dirname(AUDIT), { recursive: true });
+      fs.appendFileSync(AUDIT, JSON.stringify({
+        at: new Date().toISOString(), event: "bind-deny", tool: ev.tool_name,
+        session: process.env.OAG_SESSION || null, reason: bind.reason,
+      }) + String.fromCharCode(10));
+    } catch {}
+    process.stdout.write(JSON.stringify({
+      decision: "block",
+      reason: "OAG_BIND 拒绝：" + bind.reason + "。请用 oag run -- <命令> 启动：票据是运行前提，不是可选项。",
+    }));
+    return;
+  }
+
   const cmd = [String(ev.tool_input?.command ?? ""), payloadText(ev.tool_input)].filter(Boolean).join(" ");
   // realpath：junction / 软链 / 8.3 短名折成真实路径，否则根内一个链接就能写到根外
   const canon = (x) => {
@@ -235,14 +284,17 @@ function run() {
   try { fs.mkdirSync(path.dirname(AUDIT), { recursive: true }); fs.appendFileSync(AUDIT, line + String.fromCharCode(10)); } catch {}
 
   if (r.decision === "deny") {
+    const after = tickDeny(r.reason);
+    const frozenNow = Boolean(after && after.frozen);
     const targets = r.targets.length ? r.targets.slice(0, 3).join(", ") : "(未识别到具体路径)";
     const msg = [
+      frozenNow ? "⚠ 会话已熔断：越界次数超限，后续所有动作都会被拒，wrapper 将终止本进程。" : null,
       "OAG_GUARD 拒绝：" + r.op + " 动作，目标 " + targets,
       "原因：" + r.reason,
       repeat
         ? "这是同一目标的重复尝试，已记录。请停止换写法重试，改由用户调整策略。"
         : "请不要换用其他命令或工具重试同一目标；确需执行请让用户改策略。",
-    ].join(" | ");
+    ].filter(Boolean).join(" | ");
     process.stdout.write(JSON.stringify({ decision: "block", reason: msg }));
     return;
   }
@@ -295,7 +347,7 @@ export function install({ codexHome, policyPath, auditPath, shim = true }) {
   const pol = JSON.parse(fs.readFileSync(policyPath, "utf8"));
   fs.writeFileSync(
     path.join(codexHome, GUARD_STATE),
-    JSON.stringify({ at: new Date().toISOString(), policyPath, policyRef: policyRef(pol), scriptPath, shim: shim ? shimPath : null, auditPath }, null, 2),
+    JSON.stringify({ at: new Date().toISOString(), policyPath, policyRef: policyRef(pol), scriptPath, shim: shim ? shimPath : null, auditPath, sessionsDir: path.join(path.dirname(policyPath), ".oag-sessions") }, null, 2),
     "utf8"
   );
   return { installed: true, scriptPath, shimPath: shim ? shimPath : null, hooksFile, backup, policyPath };
@@ -345,6 +397,15 @@ export function auditGuard(codexHome, policy, auditPath) {
  * @param {{codexHome:string, fast?:boolean, codexCli?:string, model?:string}} opts
  */
 export function canary({ codexHome, fast = true, codexCli, model = "deepseek-chat" }) {
+  // 自检也走正常前提：签一张临时票据（TTL 300s 自然过期），否则"无票据=全拒"会让普通命令用例失败
+  let _sdir = path.join(codexHome, ".oag-sessions");
+  try {
+    const st = JSON.parse(fs.readFileSync(path.join(codexHome, GUARD_STATE), "utf8"));
+    if (st.sessionsDir) _sdir = st.sessionsDir;
+  } catch {}
+  const _t = issueSession({ dir: _sdir, maxDenies: 99, ttlSec: 300 });
+  const _env = { ...process.env, [SESSION_ENV]: _t.sid };
+
   const scriptPath = path.join(codexHome, GUARD_SCRIPT);
   const results = [];
   if (!fs.existsSync(scriptPath)) {
@@ -357,6 +418,7 @@ export function canary({ codexHome, fast = true, codexCli, model = "deepseek-cha
       input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", cwd: process.cwd(), tool_input: { command: cmd } }),
       encoding: "utf8",
       timeout: 15000,
+      env: { ..._env, OAG_AUDIT: path.join(codexHome, "audit.jsonl") },
     });
     let decision = "allow";
     try {
@@ -390,7 +452,7 @@ export function canary({ codexHome, fast = true, codexCli, model = "deepseek-cha
     ];
     try {
       execFileSync(codexCli, args, {
-        env: { ...process.env, CODEX_HOME: codexHome },
+        env: { ..._env, CODEX_HOME: codexHome },
         encoding: "utf8",
         timeout: 240000,
         stdio: ["ignore", "pipe", "pipe"],
@@ -408,6 +470,7 @@ export function canary({ codexHome, fast = true, codexCli, model = "deepseek-cha
 
   return { ok: results.every((r) => r.ok), results };
 }
+
 
 export function remove(codexHome) {
   const hooksFile = path.join(codexHome, "hooks.json");

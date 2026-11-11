@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 /** 会被"日后用你的权限"执行的东西：写入时无法判定，只能事后比对 */
 export const PERSISTENCE_TARGETS = [
@@ -100,7 +100,7 @@ export function watchList({ cwd, codexHome, claudeHome, policyPath }) {
  * 跑一次被监督的命令
  * @returns {{code:number, tainted:boolean, changes:Array, snapshot?:string, canaryOk:boolean}}
  */
-export function runWatched({ argv, cwd, watch, canaryFn, snapshotRepo, failOnTaint = false }) {
+export async function runWatched({ argv, cwd, watch, canaryFn, snapshotRepo, failOnTaint = false, env = null, isFrozen = null, pollMs = 800 }) {
   const result = { code: 0, tainted: false, changes: [], snapshot: null, canaryOk: true };
 
   // 1) canary 先过（闸门必须活着，否则不跑）
@@ -126,9 +126,34 @@ export function runWatched({ argv, cwd, watch, canaryFn, snapshotRepo, failOnTai
   // 3) 基线
   const base = baseline(watch);
 
-  // 4) 跑
-  const child = spawnSync(argv[0], argv.slice(1), { cwd, stdio: "inherit", encoding: "utf8" });
-  result.code = child.status ?? 1;
+  // 4) 跑（异步 spawn：要给"会话冻结则杀进程"留出监控窗口）
+  // Windows 上 .cmd/.bat 不能直接 spawn（EINVAL），必须过 shell
+  const needsShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(String(argv[0]));
+  const child = spawn(argv[0], argv.slice(1), {
+    cwd,
+    stdio: "inherit",
+    shell: needsShell,
+    env: env ? { ...process.env, ...env } : process.env,
+  });
+  let killedForFrozen = false;
+  const timer = isFrozen
+    ? setInterval(() => {
+        try {
+          if (isFrozen()) {
+            killedForFrozen = true;
+            result.frozen = true;
+            child.kill();
+          }
+        } catch {}
+      }, pollMs)
+    : null;
+  const status = await new Promise((resolve) => {
+    child.on("exit", (code, signal) => resolve({ code, signal }));
+    child.on("error", () => resolve({ code: 1 }));
+  });
+  if (timer) clearInterval(timer);
+  result.code = killedForFrozen ? 13 : status.code ?? 1;
+  if (killedForFrozen) result.error = "会话已熔断：越界次数超限，进程被终止";
 
   // 5) 事后比对
   result.changes = diffBaseline(base);

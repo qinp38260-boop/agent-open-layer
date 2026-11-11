@@ -57,6 +57,7 @@ function argv() {
     else if (t === "--base-url") opt.baseUrl = a[++i];
     else if (t === "--dsh-home") opt.dshHome = a[++i];
     else if (t === "--codex-home") opt.codexHome = a[++i];
+    else if (t === "--max-denies") opt.maxDenies = a[++i];
     else if (t === "--claude-home") opt.claudeHome = a[++i];
     else if (t === "--policy") opt.policy = a[++i];
       else if (t === "--cwd") opt.cwd = a[++i];
@@ -281,8 +282,26 @@ async function main() {
       canaryFn = () => canary({ codexHome, fast: true });
     }
 
+    // 会话强绑定：没有这张票据，闸门拒掉一切动作（裸跑 codex 什么都做不了）
+    const { issueSession, readSession, clearSession, SESSION_ENV } = await import("../src/core/session.js");
+    let polPolicy = null;
+    try { polPolicy = fs.readFileSync(opt.policy ? path.resolve(opt.policy) : path.join(codexHome, "policy.json"), "utf8"); } catch {}
+    const polPath = opt.policy ? path.resolve(opt.policy) : path.join(codexHome, "policy.json");
+    const ticket = issueSession({ codexHome, policyPath: polPath, policy: polPolicy, maxDenies: Number(opt.maxDenies ?? 3) });
     console.log(`${C.d}监督运行${C.x}  监控 ${watch.length} 个路径${canaryFn ? "，canary 先过" : "（跳过 canary）"}`);
-    const r = runWatched({ argv, cwd, watch, canaryFn, snapshotRepo: opt.snapshot, failOnTaint: process.argv.slice(2).includes("--fail-on-taint") });
+    console.log(`  ${C.d}会话票据${C.x} ${ticket.sid}  TTL ${ticket.ttlSec}s  越界上限 ${ticket.maxDenies} 次后熔断`);
+    const r = await runWatched({
+      argv, cwd, watch, canaryFn,
+      snapshotRepo: opt.snapshot,
+      failOnTaint: process.argv.slice(2).includes("--fail-on-taint"),
+      env: { [SESSION_ENV]: ticket.sid },
+      isFrozen: () => Boolean(readSession(ticket.dir, ticket.sid)?.frozen),
+    });
+    const finalTicket = readSession(ticket.dir, ticket.sid);
+    if (finalTicket) {
+      console.log(`  越界计数 ${finalTicket.denies ?? 0}/${finalTicket.maxDenies}${finalTicket.frozen ? `  ${C.r}已熔断：${finalTicket.frozenReason}${C.x}` : ""}`);
+    }
+    if (!r.frozen) clearSession({ dir: ticket.dir, sid: ticket.sid });
     if (!r.canaryOk) {
       console.log(`${C.r}✗ canary 未通过：闸门可能已失效，拒绝开跑${C.x}`);
     }

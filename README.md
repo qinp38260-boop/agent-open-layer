@@ -1,5 +1,7 @@
 # agent-open-layer
 
+> **运行前提**：闸门现在要求会话票据——必须用 `oag run -- <命令>` 启动，裸跑宿主会被全拒（见 `docs/SESSION-BIND.md`）。
+>
 > **This is not a security sandbox.** On a Windows box without administrator rights this project gives you
 > *intent-level* blocking and evidence. It has been observed to **let actions through when the hook fails
 > (6/6 in testing)**, a split-up command sequence can get around intent matching, and network isolation has only

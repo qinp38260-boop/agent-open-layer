@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { baseline, diffBaseline, watchList, runWatched } from "../src/core/run-wrapper.js";
 
-test("基线：文件改动/创建/删除都能被发现", () => {
+test("基线：文件改动/创建/删除都能被发现", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oag-run-"));
   const a = path.join(dir, "a.txt");
   fs.writeFileSync(a, "1");
@@ -18,7 +18,7 @@ test("基线：文件改动/创建/删除都能被发现", () => {
   assert.ok(changes.some((c) => c.kind === "created"));
 });
 
-test("watchList 包含闸门文件与配置即代码", () => {
+test("watchList 包含闸门文件与配置即代码", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oag-watch-"));
   fs.mkdirSync(path.join(dir, ".git", "hooks"), { recursive: true });
   fs.writeFileSync(path.join(dir, ".git", "config"), "[core]\n");
@@ -29,13 +29,13 @@ test("watchList 包含闸门文件与配置即代码", () => {
   assert.ok(list.some((p) => p.endsWith("hooks.json")));
 });
 
-test("运行期间改了被监控文件 → tainted，且退出码可收紧", () => {
+test("运行期间改了被监控文件 → tainted，且退出码可收紧", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oag-run2-"));
   const target = path.join(dir, "package.json");
   fs.writeFileSync(target, "{}");
   const node = process.execPath;
   // 子进程改文件（模拟"配置即代码被写"）
-  const r = runWatched({
+  const r = await runWatched({
     argv: [node, "-e", `require("fs").writeFileSync(${JSON.stringify(target)}, "{\\"x\\":1}")`],
     cwd: dir,
     watch: watchList({ cwd: dir, codexHome: path.join(dir, ".codex") }),
@@ -45,10 +45,10 @@ test("运行期间改了被监控文件 → tainted，且退出码可收紧", ()
   assert.equal(r.code, 11, "failOnTaint 应把退出码改成 11");
 });
 
-test("canary 不通过 → 不开跑（退出码 10）", () => {
+test("canary 不通过 → 不开跑（退出码 10）", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oag-run3-"));
   const marker = path.join(dir, "should-not-exist.txt");
-  const r = runWatched({
+  const r = await runWatched({
     argv: [process.execPath, "-e", `require("fs").writeFileSync(${JSON.stringify(marker)}, "x")`],
     cwd: dir,
     watch: [],
@@ -58,10 +58,10 @@ test("canary 不通过 → 不开跑（退出码 10）", () => {
   assert.equal(fs.existsSync(marker), false, "canary 失败时不得执行子命令");
 });
 
-test("未被改动时 tainted=false", () => {
+test("未被改动时 tainted=false", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oag-run4-"));
   fs.writeFileSync(path.join(dir, "package.json"), "{}");
-  const r = runWatched({
+  const r = await runWatched({
     argv: [process.execPath, "-e", "process.exit(0)"],
     cwd: dir,
     watch: watchList({ cwd: dir, codexHome: path.join(dir, ".codex") }),
