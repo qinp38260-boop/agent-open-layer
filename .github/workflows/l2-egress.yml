@@ -1,0 +1,38 @@
+name: l2-egress
+
+# L2 出口验收（Linux 才能做真封锁）：iptables owner match 按 uid 封出口，
+# 判据 = 外部不可达 + 蜜标服务端请求数 + 别的账号不受影响 + 规则可逆。
+# 本机 Windows 上做不到按用户过滤出口（需 WFP 驱动 + 管理员），所以搬到这里。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+jobs:
+  linux-l2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 建被测用户与工作目录（root）
+        run: |
+          set -eux
+          sudo useradd -m -s /bin/bash agent_runner
+          sudo mkdir -p /srv/agent-work
+          sudo chown -R agent_runner:agent_runner /srv/agent-work
+      - name: 跑出口验收
+        id: egress
+        run: |
+          set -o pipefail
+          sudo bash scripts/l2-egress-probe.sh | tee /tmp/l2.txt
+        continue-on-error: true
+      - name: 结论
+        run: |
+          echo "退出码: ${{ steps.egress.outcome }}"
+          grep -E "PASS|FAIL|pass=|honey_hits" /tmp/l2.txt || true
+          test "${{ steps.egress.outcome }}" = "success"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l2-egress
+          path: /tmp/l2.txt
