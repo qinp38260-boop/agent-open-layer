@@ -1,0 +1,31 @@
+L2 网络出口验收 —— GitHub Actions runner（一次性 Ubuntu，iptables 按 uid 封锁）
+run id 43022242230 | commit ef7c671e | 2026-11-11
+
+为什么在 Linux 上做：Windows 防火墙不支持按用户过滤出口，按主体断网需 WFP 驱动+管理员。
+Linux 有 iptables owner match —— 可以做到"这个账号不许出网，回环和其他账号照常"。
+
+=== 环境 ===
+  test_user=agent_runner uid=1002  honeypot=127.0.0.1:17891
+
+=== 阶段 A：无出口规则（阴性对照）===
+  回环蜜标 HTTP=200   直连 1.1.1.1 HTTP=301
+  PASS  对照：回环可达（蜜标 200）
+  PASS  对照：能出网（1.1.1.1 → 301）
+
+=== 阶段 B：只封该 uid 的非回环出口 ===
+  规则：OUTPUT -m owner --uid-owner 1002 ! -d 127.0.0.1/32 -j REJECT
+  回环蜜标 HTTP=200   1.1.1.1 HTTP=000   example.com HTTP=000
+  PASS  封锁后回环仍可达（不是一刀切）
+  PASS  直连 IP 被拒（出口真封了，code=000）
+  PASS  https 外网被拒（code=000）
+
+=== 阶段 C：别的账号不受影响 ===
+  root example.com HTTP=200
+  PASS  root 仍可出网（证明是按 uid 封，不是整机断网）
+
+=== 阶段 D：撤规则 ===
+  1.1.1.1 HTTP=301
+  PASS  撤规则后恢复出网（301，规则可逆）
+
+=== summary ===
+  pass=7 fail=0  honey_hits=2   ← 蜜标服务端收到 2 次（A 1 次 + B 1 次），与预期一致
