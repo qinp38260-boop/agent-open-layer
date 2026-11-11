@@ -22,6 +22,7 @@ import { decisionTable, policyRef, collectRoots } from "../../core/policy.js";
 import { normalizeToolCall, actionFor, scopedOps, normPath, payloadText, PERSISTENCE_RE } from "../../core/actions.js";
 
 export const GUARD_SCRIPT = "oag-guard.mjs";
+export const SHIM_SCRIPT = "oag-shim.mjs";
 export const GUARD_STATE = ".oag-guard.json";
 export const GUARD_DENY_STATE = ".oag-guard-denies.json";
 
@@ -249,10 +250,17 @@ function run() {
 `;
 }
 
-export function install({ codexHome, policyPath, auditPath }) {
+export function install({ codexHome, policyPath, auditPath, shim = true }) {
   const hooksFile = path.join(codexHome, "hooks.json");
   const scriptPath = path.join(codexHome, GUARD_SCRIPT);
   fs.writeFileSync(scriptPath, guardScriptBody(policyPath, auditPath ?? path.join(codexHome, "..", ".oag", "audit.jsonl")), "utf8");
+
+  // 外壳：宿主对 hook 故障一律放行（7 种情况实测），只有套一层才能把"闸门坏了"变成"block"
+  const shimPath = path.join(codexHome, SHIM_SCRIPT);
+  if (shim) {
+    const src = new URL("../../../scripts/guard-shim.mjs", import.meta.url);
+    fs.copyFileSync(src, shimPath);
+  }
 
   let cfg = {};
   try {
@@ -262,11 +270,13 @@ export function install({ codexHome, policyPath, auditPath }) {
   }
   cfg.hooks = cfg.hooks ?? {};
   const kept = (Array.isArray(cfg.hooks.PreToolUse) ? cfg.hooks.PreToolUse : []).filter(
-    (e) => !JSON.stringify(e).includes(GUARD_SCRIPT)
+    (e) => !JSON.stringify(e).includes(GUARD_SCRIPT) && !JSON.stringify(e).includes(SHIM_SCRIPT)
   );
   // 实测：命令里用正斜杠 + 引号最稳（反斜杠路径在 hook 里会被 shell 吃掉）
   const fwd = scriptPath.split(String.fromCharCode(92)).join("/");
-  cfg.hooks.PreToolUse = [...kept, { matcher: "", hooks: [{ type: "command", command: `node "${fwd}"` }] }];
+  const fwdShim = shimPath.split(String.fromCharCode(92)).join("/");
+  const cmd = shim ? `node "${fwdShim}" "${fwd}"` : `node "${fwd}"`;
+  cfg.hooks.PreToolUse = [...kept, { matcher: "", hooks: [{ type: "command", command: cmd }] }];
 
   let backup = null;
   if (fs.existsSync(hooksFile)) {
@@ -277,10 +287,10 @@ export function install({ codexHome, policyPath, auditPath }) {
   const pol = JSON.parse(fs.readFileSync(policyPath, "utf8"));
   fs.writeFileSync(
     path.join(codexHome, GUARD_STATE),
-    JSON.stringify({ at: new Date().toISOString(), policyPath, policyRef: policyRef(pol), scriptPath, auditPath }, null, 2),
+    JSON.stringify({ at: new Date().toISOString(), policyPath, policyRef: policyRef(pol), scriptPath, shim: shim ? shimPath : null, auditPath }, null, 2),
     "utf8"
   );
-  return { installed: true, scriptPath, hooksFile, backup, policyPath };
+  return { installed: true, scriptPath, shimPath: shim ? shimPath : null, hooksFile, backup, policyPath };
 }
 
 export function status(codexHome) {
@@ -399,7 +409,7 @@ export function remove(codexHome) {
   } catch {}
   let removed = 0;
   if (Array.isArray(cfg?.hooks?.PreToolUse)) {
-    const kept = cfg.hooks.PreToolUse.filter((e) => !JSON.stringify(e).includes(GUARD_SCRIPT));
+    const kept = cfg.hooks.PreToolUse.filter((e) => !JSON.stringify(e).includes(GUARD_SCRIPT) && !JSON.stringify(e).includes(SHIM_SCRIPT));
     removed = cfg.hooks.PreToolUse.length - kept.length;
     cfg.hooks.PreToolUse = kept;
     if (!kept.length) delete cfg.hooks.PreToolUse;

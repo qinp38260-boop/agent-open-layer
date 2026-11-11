@@ -15,7 +15,8 @@
 | codex | 0.167.0 | 被 policy 拒绝的表现 | 仅 stderr `Rejected(... blocked by policy)`，事件流里不出现该命令 | `codex exec -s read-only` | ✅ 本机实测 |
 | codex | 0.167.0 | Stop hook（原生自动续跑） | 存在：hooks.json → decision:block 可强制再跑一轮；需 hook 受信任 | `实测 hooks.json + --dangerously-bypass-hook-trust` | ✅ 本机实测 |
 | codex | 0.167.0 | workspace-write 在 Windows 的实际效果 | 退化为只读：工作区内写也被拒；域外观测=文件不存在 + stderr Rejected | `文件系统 + stderr 双证` | ✅ 本机实测 |
-| codex | 0.167.0 | hook 异常时宿主的行为 | fail-open：崩溃/乱输出/空输出/退出码2/超时/缺 decision 六种情况全部放行 | `6 场景实测` | ✅ 本机实测 |
+| codex | 0.167.0 | hook 异常时宿主的行为 | **fail-open**：崩溃/乱输出/空输出/退出码2/退出码2+stderr/超时/缺 decision **七种全部放行**（此前"6/6"只是硬编码字符串，现已有实验脚本 + 双对照） | `scripts/hook-failopen-probe.mjs`，证据 docs/evidence/host-hook-failopen-20261111.json | ✅ 本机实测 |
+| codex | 0.167.0 | hook 失败能否改成"即拦" | **配置层做不到**（二进制有 `hook.timeout_sec` 但没有 fail-closed 开关）；**外壳可补**：`oag-shim.mjs` 包裹后崩溃闸门 → 宿主侧实测 blocked，正常放行不受影响 | `--only shimCrashGuard,shimOkGuard` | ✅ 本机实测 |
 | codex | 0.167.0 | 环境变量能否清洗 | 能：shell_environment_policy.inherit+exclude 后 agent 自测 KEYLEN=0，模型调用正常 | `实机运行` | ✅ 本机实测 |
 | codex | 0.167.0 | PreToolUse hook 能否否决动作 | 能：返回 decision:block 后文件未被创建，stderr 出现 Command blocked by PreToolUse hook | `实测 8 动作矩阵` | ✅ 本机实测 |
 | codex | 0.167.0 | 无头模式是否有中间档 | 没有：approval=never 与 on-request 都等于拒绝，除全局 bypass 无选择性放开 | `多轮对照` | ✅ 本机实测 |

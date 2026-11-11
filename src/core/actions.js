@@ -235,6 +235,9 @@ export function extractTargets(text, cwd) {
   for (const m of s.matchAll(ABS)) {
     let raw = m[1].replace(/[;,)]+$/, "");
     if (!raw) continue;
+    // Windows 开关（cmd /c、/s、/q、/f…）不是路径：实测 `cmd /c echo x > f` 会把 "/c" 抽成目标，
+    // 判成"根外"→ 整条合法命令被误拦。
+    if (/^\/[a-zA-Z]{1,3}$/.test(raw)) continue;
     if (raw.startsWith("~")) raw = raw.slice(1);
     const n = normPath(raw);
     if (/^[a-z]:\//.test(n) || n.startsWith("/")) out.add(n);
