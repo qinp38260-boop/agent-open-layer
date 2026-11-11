@@ -100,14 +100,27 @@ shell 命令**。要真正区分，只能写 `Bash(git *)` 这种模式规则 �
 还有一个未验证点：`.codex` 文件虽是 `agent_runner:(RX)`，但父目录给了它 `(M)`，
 Windows 上“能否删除子文件”取决于父目录的 DELETE_CHILD，**需以该账号实跑确认**（缺口令）。
 
-### 4.3 修复方案（需管理员，命令清单已交付）
+### 4.3 修复方案：**原方案已否决（会伤到主人账号）**
 
-`C:\Users\p1553\Desktop\L0隔离加固_管理员命令.txt`，包含：
-1. 备份 ACL（两条 icacls 导出）
-2. 工作目录破继承：只留 agent_runner(M) + 管理员/SYSTEM/p1553
-3. `.codex` 破继承：agent_runner 降到 (RX)（去掉 DELETE_CHILD）
-4. D 盘根：`Authenticated Users` 从 (M) 降为 (RX)
-5. 验证命令 + 一条命令的回滚
+第一版方案是「D 盘根 Authenticated Users 从 (M) 降为 (RX)」。实测后**撤回**：
+
+```
+D:\Programs\hermes_data / D:\openlib / D:\wechat-scanner / D:\temp
+  → 全部只有 Authenticated Users:(I)(M)，没有任何 p1553 的显式 ACE
+```
+
+也就是说，**主人自己的 D 盘写权限也来自同一条继承 ACE**。降级后第一个被拦住的是主人，
+不是 agent。这是"装锁把自家门焊死"。
+
+更根本的限制：显式 deny 会继承到子目录且无法被子目录的 allow 覆盖，
+所以"给一个标准用户划一小块地盘、其余锁死"在**共享权限的单盘**上靠 ACL 做不到。
+
+**修正后的可选方案**（仅在确实需要时执行，需管理员，含备份与回滚）：
+先给 p1553 补显式 (M) → 再把根上 Authenticated Users 降 (RX) → 工作目录破继承。
+清单与回滚见桌面 `L0隔离说明_含可选方案.txt`。
+
+**默认建议：不动 D 盘权限。** 单用户机器上，这种改动的破坏面大于收益。
+日常降风险用零副作用的一条：`net user agent_runner /active:no`（用时再开）。
 
 ### 4.4 行为验收（14 项）未做
 
