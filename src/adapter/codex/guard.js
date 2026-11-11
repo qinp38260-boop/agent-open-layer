@@ -19,7 +19,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync, execFileSync } from "node:child_process";
 import { decisionTable, policyRef, collectRoots } from "../../core/policy.js";
-import { normalizeToolCall, actionFor, scopedOps, normPath, PERSISTENCE_RE } from "../../core/actions.js";
+import { normalizeToolCall, actionFor, scopedOps, normPath, payloadText, PERSISTENCE_RE } from "../../core/actions.js";
 
 export const GUARD_SCRIPT = "oag-guard.mjs";
 export const GUARD_STATE = ".oag-guard.json";
@@ -29,14 +29,17 @@ export const GUARD_DENY_STATE = ".oag-guard-denies.json";
  * 判定一次工具调用（纯函数，单测与运行时共用）
  * @returns {{op:string, action:string, decision:string, reason:string, targets:string[]}}
  */
-export function classify({ toolName, command, policy, cwd }) {
+export function classify({ toolName, command, policy, cwd, input, canon }) {
   const table = decisionTable(policy);
-  const { op, targets, why } = normalizeToolCall({ toolName, command, cwd });
+  // 命令文本 + 结构化入参（apply_patch 把路径写在 input 里，只读 command 会漏掉整个目标集）
+  const text = [command ?? "", payloadText(input)].filter(Boolean).join(" ");
+  const { op, targets, why } = normalizeToolCall({ toolName, command: text, cwd });
   const action = actionFor(op);
   const decision = table[action] ?? "allow";
 
   if (scopedOps().includes(op)) {
-    const roots = collectRoots(policy, op === "read" ? "READ" : "WRITE").map(normPath);
+    const fix = typeof canon === "function" ? canon : (x) => x;
+    const roots = collectRoots(policy, op === "read" ? "READ" : "WRITE").map((r) => normPath(fix(r)));
     if (roots.length) {
       const outside = targets.filter((t) => !roots.some((r) => t === r || t.startsWith(r + "/")));
       if (outside.length) {
@@ -105,15 +108,19 @@ function decisionTable2(policy) {
   return t;
 }
 
-function classify2({ toolName, command, policy, cwd }) {
+function classify2({ toolName, command, policy, cwd, canon }) {
   const table = decisionTable2(policy);
   const { op, targets, why } = normalizeToolCall({ toolName, command, cwd });
   const action = actionFor(op);
   const decision = table[action] ?? "allow";
   if (scopedOps().includes(op)) {
-    const roots = rootsOf(policy, op === "read" ? "READ" : "WRITE");
+    const fix = typeof canon === "function" ? canon : (x) => x;
+    const roots = rootsOf(policy, op === "read" ? "READ" : "WRITE").map((r) => normPath(fix(r)));
     if (roots.length) {
-      const outside = targets.filter((t) => !roots.some((r) => t === r || t.startsWith(r + "/")));
+      const outside = targets.filter((t) => {
+        const tt = normPath(fix(t));
+        return !roots.some((r) => tt === r || tt.startsWith(r + "/"));
+      });
       if (outside.length) return { op, action, decision: "deny", targets, reason: "目标不在允许目录内：" + outside.slice(0, 3).join(", ") };
     } else if (targets.length && decision === "allow") {
       return { op, action, decision: "deny", targets, reason: "策略未开放任何目录，但动作涉及路径：" + targets.slice(0, 2).join(", ") };
@@ -185,8 +192,27 @@ function run() {
   try { ev = JSON.parse(input); } catch { return failClosed("事件不是合法 JSON"); }
   let policy = { rules: [] };
   try { policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8")); } catch { return failClosed("策略文件读不到或不是合法 JSON：" + POLICY_PATH); }
-  const cmd = String(ev.tool_input?.command ?? "");
-  const r = classify2({ toolName: ev.tool_name, command: cmd, policy, cwd: ev.cwd });
+  // 入参里所有字符串字段都摊进来：apply_patch 的补丁正文在 input 里，只读 command 等于不判
+  const cmd = [String(ev.tool_input?.command ?? ""), payloadText(ev.tool_input)].filter(Boolean).join(" ");
+  // realpath：junction / 软链 / 8.3 短名折成真实路径，否则根内一个链接就能写到根外
+  const canon = (x) => {
+    // 目标文件可能还不存在（新建/改名），realpath 会抛错 —— 此时折「最近的已存在祖先」，
+    // 否则根内一条 junction 就能把写入带到根外却仍被判成"在根内"。
+    let cur = String(x);
+    const rest = [];
+    for (let i = 0; i < 12; i++) {
+      try {
+        const real = fs.realpathSync.native(cur);
+        return rest.length ? nodePath.join(real, ...rest.reverse()) : real;
+      } catch {}
+      const parent = nodePath.dirname(cur);
+      if (!parent || parent === cur) break;
+      rest.push(nodePath.basename(cur));
+      cur = parent;
+    }
+    return x;
+  };
+  const r = classify2({ toolName: ev.tool_name, command: cmd, policy, cwd: ev.cwd, canon });
 
   const persistence = PERSISTENCE_RE.test(" " + cmd);
   const repeat = r.decision !== "allow" && wasDenied(r.targets);

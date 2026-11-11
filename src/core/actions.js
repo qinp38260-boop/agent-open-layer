@@ -156,15 +156,70 @@ const INTENT = [
   },
 ];
 
-const ABS = /(?:^|[\s"'(=:,])((?:[A-Za-z]:[\\/]|~[\\/]|\/(?:[\w.-]+\/)*)[^\s"'()|;&]*)/g;
+const ABS = /(?:^|[\s"'"(=:,])((?:[\\/]{2}[?.][\\/]?)?(?:[A-Za-z]:[\\/]|~[\\/]|\/(?:[\w.-]+\/)*)[^\s"'()|;&]*)/g;
 
-/** 反斜杠归一 + 去尾斜杠 + 小写（跨平台比较用） */
+/**
+ * 路径归一：反斜杠 + 去尾斜杠 + 小写，并且**解析 . 与 ..**、拆掉 Windows 的几层伪装
+ *
+ * 为什么必须做这些（每一条都对应一种真实绕过）：
+ *   1) `..` —— `D:/work/../Windows/x` 用 startsWith 判根时会话通过，实际写到系统目录；
+ *   2) `\\?\` / `\\.\` 设备前缀 —— 加了前缀后 Win32 不再折叠 `..`，等于绕过 1 的补丁；
+ *   3) ADS（`a.txt:hidden`）—— Windows 视作写 a.txt 的备用流，前缀判定会误判对象；
+ *   4) 尾部点与空格 —— Win32 会静默丢弃（`work.` == `work`），不剥就等于给了个"假名"。
+ * 归一化只做字符串层面（不碰磁盘），真实软链/junction 由调用方用 realpath 再折一次。
+ */
 export function normPath(p) {
-  let s = String(p).trim().replace(/^["']|["']$/g, "");
-  s = s.split(String.fromCharCode(92)).join("/");
-  s = s.replace(/\/+/g, "/");
-  if (s.length > 1) s = s.replace(/\/+$/, "");
-  return s.toLowerCase();
+  let raw = String(p ?? "").trim().replace(/^["']|["']$/g, "");
+  raw = raw.split(String.fromCharCode(92)).join("/");
+  raw = raw.replace(/^\/+[?.](?=\/)/, ""); // \?\ 与 \.\ 前缀（设备命名空间）
+  raw = raw.replace(/\/+/g, "/");
+  raw = raw.replace(/^\/+(?=[a-zA-Z]:)/, ""); // 去前缀后可能留下 /D:/...
+
+  let drive = "";
+  const dm = raw.match(/^([a-zA-Z]:)(?=\/|$)/);
+  if (dm) {
+    drive = dm[1].toLowerCase();
+    raw = raw.slice(2);
+  }
+
+  const stack = [];
+  for (let seg of raw.split("/")) {
+    if (!seg) continue;
+    if (seg !== "." && seg !== "..") {
+      const i = seg.indexOf(":"); // ':' 之后是 NTFS 流名
+      seg = (i >= 0 ? seg.slice(0, i) : seg).replace(/[. ]+$/, ""); // 尾部点/空格 Win32 会丢
+      if (!seg) continue;
+    }
+    if (seg === ".") continue;
+    if (seg === "..") {
+      stack.pop(); // 根之上再 .. 无意义，丢掉
+      continue;
+    }
+    stack.push(seg);
+  }
+  const body = stack.join("/");
+  let out;
+  if (drive) out = drive + (body ? "/" + body : "");
+  else if (stack.length) out = "/" + body;
+  else out = ".";
+  return out.toLowerCase();
+}
+
+/**
+ * 把工具调用的入参拍平成一段文本，用于意图/目标识别。
+ *
+ * 实测教训：只读 `tool_input.command` 时，`apply_patch` 这类"路径写在结构化字段里"的
+ * 调用完全绕过闸门 —— command 是空的，抽出来的 targets 也是空的，白名单根本没被执行。
+ * 所以任何看起来像"命令/补丁/路径"的字符串字段都要摊进来。
+ */
+export function payloadText(input, depth = 0) {
+  if (input == null || depth > 3) return "";
+  if (typeof input === "string") return input;
+  if (Array.isArray(input)) return input.map((x) => payloadText(x, depth + 1)).join(" ");
+  if (typeof input !== "object") return "";
+  const parts = [];
+  for (const k of Object.keys(input)) parts.push(payloadText(input[k], depth + 1));
+  return parts.filter(Boolean).join(" ");
 }
 
 function joinPath(cwd, rel) {
