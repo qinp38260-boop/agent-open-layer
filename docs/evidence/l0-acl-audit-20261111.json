@@ -1,0 +1,55 @@
+{
+  "at": "2026-11-11T20:16:24",
+  "method": "icacls 读取 ACL（未以 agent_runner 身份实跑，需口令）",
+  "findings": [
+    {
+      "目标": "工作目录 D:\\agent-work",
+      "路径": "D:\\agent-work",
+      "含 Authenticated Users(M)": true,
+      "agent_runner 条目": "D:\\agent-work 完美\\agent_runner:(OI)(CI)(M)"
+    },
+    {
+      "目标": "闸门脚本",
+      "路径": "D:\\agent-work\\.codex\\oag-guard.mjs",
+      "含 Authenticated Users(M)": false,
+      "agent_runner 条目": "D:\\agent-work\\.codex\\oag-guard.mjs 完美\\agent_runner:(RX)"
+    },
+    {
+      "目标": "策略文件",
+      "路径": "D:\\agent-work\\.codex\\policy.json",
+      "含 Authenticated Users(M)": false,
+      "agent_runner 条目": "D:\\agent-work\\.codex\\policy.json 完美\\agent_runner:(RX)"
+    },
+    {
+      "目标": "密钥 .env",
+      "路径": "D:\\Programs\\hermes_data\\.env",
+      "含 Authenticated Users(M)": true,
+      "agent_runner 条目": "D:\\Programs\\hermes_data\\.env 完美\\agent_runner:(N)"
+    },
+    {
+      "目标": "用户目录",
+      "路径": "C:\\Users\\p1553",
+      "含 Authenticated Users(M)": false,
+      "agent_runner 条目": "无"
+    },
+    {
+      "目标": "D 盘根",
+      "路径": "D:\\",
+      "含 Authenticated Users(M)": true,
+      "agent_runner 条目": "无"
+    },
+    {
+      "目标": "D:\\temp",
+      "路径": "D:\\temp",
+      "含 Authenticated Users(M)": true,
+      "agent_runner 条目": "无"
+    },
+    {
+      "目标": "D:\\openlib",
+      "路径": "D:\\openlib",
+      "含 Authenticated Users(M)": true,
+      "agent_runner 条目": "无"
+    }
+  ],
+  "conclusion": "D:\\ 根对 Authenticated Users 授予 (OI)(CI)(M)，agent_runner 作为已认证用户继承该权限 → 可写 D 盘任意新位置（含 D:\\temp、D:\\openlib）。上次 14 项验收只覆盖 C:\\ 目标，未覆盖 D 盘其他位置，故未暴露。"
+}
