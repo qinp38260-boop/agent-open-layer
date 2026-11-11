@@ -1,0 +1,78 @@
+name: agent-run-linux
+
+# 目的：验证"在别处跑 agent"这条通道本身成立 —— oag run 签票据 → 假宿主干活 →
+#       越界被拒 → 熔断 → wrapper 杀进程（退出码 13）。
+# 这一步不需要任何模型密钥，所以可以常态化跑。
+# 真跑 codex 的 job 需要仓库 secret DEEPSEEK_API_KEY；没配就自动跳过。
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"
+
+jobs:
+  harness-channel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 准备独立用户 + 工作目录 + 策略 + 闸门
+        run: |
+          set -eux
+          sudo useradd -m -s /bin/bash agent_runner
+          sudo mkdir -p /srv/agent-work /srv/codex-home
+          sudo chown -R agent_runner:agent_runner /srv/agent-work
+          cat > /tmp/policy.json <<'JSON'
+          {"version":1,"rules":[
+            {"action":"WRITE","decision":"allow","scope":{"paths":["/srv/agent-work/**"]}},
+            {"action":"READ","decision":"allow","scope":{"paths":["/srv/agent-work/**"]}},
+            {"action":"EXEC_SAFE","decision":"allow","scope":{}},
+            {"action":"EXEC_DESTRUCTIVE","decision":"deny","scope":{}},
+            {"action":"NET","decision":"deny","scope":{}}
+          ]}
+          JSON
+          sudo cp /tmp/policy.json /srv/codex-home/policy.json
+          mkdir -p /tmp/gen
+          node -e 'import("./src/adapter/codex/guard.js").then(m=>m.install({codexHome:"/tmp/gen", policyPath:"/srv/codex-home/policy.json", auditPath:"/srv/agent-work/audit.jsonl"}))'
+          sudo cp /tmp/gen/oag-guard.mjs /srv/codex-home/oag-guard.mjs
+          sudo cp /tmp/gen/oag-shim.mjs /srv/codex-home/oag-shim.mjs 2>/dev/null || true
+          # 票据目录要能被 agent 写（wrapper 以 agent 身份签票），但 codex-home 本身保持 root 属主，
+          # 否则 agent 可以删掉闸门脚本（抗篡改就没了）
+          sudo mkdir -p /srv/codex-home/.oag-sessions
+          sudo chown agent_runner /srv/codex-home/.oag-sessions
+          sudo chown root:root /srv/codex-home /srv/codex-home/oag-guard.mjs /srv/codex-home/policy.json
+          sudo chmod 755 /srv/codex-home /srv/codex-home/oag-guard.mjs
+          sudo chmod 644 /srv/codex-home/policy.json
+
+      - name: 跑 oag run + 假宿主（期望：越界被拒 → 熔断 → 被杀，退出码 13）
+        id: run
+        run: |
+          set -o pipefail
+          cd /srv/agent-work
+          sudo -u agent_runner env PATH="$PATH" node "$GITHUB_WORKSPACE/bin/oag.js" run \
+            --max-denies 2 \
+            --cwd /srv/agent-work \
+            --codex-home /srv/codex-home \
+            --policy /srv/codex-home/policy.json \
+            --no-canary \
+            -- node "$GITHUB_WORKSPACE/scripts/fake-host.mjs" --guard /srv/codex-home/oag-guard.mjs --root /srv/agent-work \
+            | tee /tmp/run.txt
+          CODE=${PIPESTATUS[0]}
+          echo "wrapper_exit=$CODE" | tee -a /tmp/run.txt
+          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: 结论
+        run: |
+          echo "退出码: ${{ steps.run.outputs.exit_code }}"
+          grep -E "fake-host|熔断|越界计数|wrapper_exit" /tmp/run.txt || true
+          test "${{ steps.run.outputs.exit_code }}" = "13"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-run-linux
+          path: /tmp/run.txt
