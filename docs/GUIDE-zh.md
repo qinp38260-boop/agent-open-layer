@@ -40,7 +40,7 @@ Agent 在隔离环境里自由干活，人只审它最终交出来的 diff。
 
 | 层 | 做什么 | 状态 | 凭什么 |
 |---|---|---|---|
-| **L0 主体隔离** | 换一个 Windows 账号跑 agent，用 NTFS ACL 划边界 | ✅ 实测 14 项 | 以 `agent_runner` 身份：能写 `D:/agent-work`；读 `.env`、写用户目录、列 `.ssh`、写 `C:\Windows` 全被拒 ｜**当前态：账号已停用 → 未生效（config-only）** |
+| **L0 主体隔离** | 换一个 Windows 账号跑 agent，用 NTFS ACL 划边界 | ✅ 实测 14 项 | 以 `agent_runner` 身份：能写 `D:/agent-work`；读 `.env`、写用户目录、列 `.ssh`、写 `C:\Windows` 全被拒 ｜**当前态：账号已启用，但 ACL 审计显示 D 盘根给 Authenticated Users(M) → 隔离不成立；14 项行为验收未做 → 仍 config-only** |
 | **L0 闸门抗篡改** | agent 改不掉/删不掉自己的闸门 | ✅ 实测 | 改 `hooks.json`、改闸门脚本、**删**闸门脚本、改 `policy.json` —— 4 项全 BLOCKED |
 | **L0 闸门可运行** | 闸门在那个账号下必须**读得到、跑得起来** | ✅ 实测 | `node oag-guard.mjs` 以 `agent_runner` 执行，空事件输出 `{"decision":"block"}`，退出码 0 |
 | **L1 写范围** | 只允许在工作目录写 | ✅ 实测（8 动作矩阵） | 工作区外写、第二个目录写、删除、装包、git 提交全被拦 |

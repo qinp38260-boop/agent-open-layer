@@ -76,25 +76,43 @@ shell 命令**。要真正区分，只能写 `Bash(git *)` 这种模式规则 �
 
 ---
 
-## 四、L0 主体隔离：**卡在权限，需要你执行一条命令**
+## 四、L0 主体隔离：账号已启用，但**审计发现隔离并不成立**
 
-实测状态：
+### 4.1 已确认有效的部分
 
-```
-net user agent_runner        → 账户启用: No（已停用）
-whoami /groups | 管理员组     → 0 条（当前会话非管理员）
-```
+| 项 | 证据 |
+|---|---|
+| 账号 | `net user agent_runner` → 账户启用 **Yes**（用户已提权启用） |
+| 密钥 | `.env` 上 `agent_runner:(N)` → 读不到 |
+| 闸门文件 | `oag-guard.mjs` / `policy.json` 上 `agent_runner:(RX)` → 文件级不可写 |
+| 用户目录 | `C:\Users\p1553` 上无 agent_runner 的 ACE |
 
-**当前会话建不了也启用不了账号**。需要你在**管理员 PowerShell**里跑一条：
+### 4.2 发现的真问题（此前 14 项验收没覆盖）
 
-```powershell
-net user agent_runner /active:yes
-```
+`D:\` 根 ACL 含 **`Authenticated Users:(OI)(CI)(M)`** —— agent_runner 是已认证用户，
+继承该权限后**对整个 D 盘可写**（`D:\temp`、`D:\openlib` 等）。
 
-启用后我就能跑完整的 14 项验收 + 4 项抗篡改，把 L0 从 `config-only` 变成 `probe-verified`。
-（不想开就把这句忽略，L0 保持"未生效"，文档已如实标注当前态。）
+此前的验收清单只测了 `C:\` 下的目标（用户目录 / 系统目录 / `.env`），
+所以一路“BLOCKED”，看不出这个洞。
 
----
+**准确结论：L0 目前 = “挡住 C:\ 敏感区”，≠ “只能写工作目录”。**
+
+还有一个未验证点：`.codex` 文件虽是 `agent_runner:(RX)`，但父目录给了它 `(M)`，
+Windows 上“能否删除子文件”取决于父目录的 DELETE_CHILD，**需以该账号实跑确认**（缺口令）。
+
+### 4.3 修复方案（需管理员，命令清单已交付）
+
+`C:\Users\p1553\Desktop\L0隔离加固_管理员命令.txt`，包含：
+1. 备份 ACL（两条 icacls 导出）
+2. 工作目录破继承：只留 agent_runner(M) + 管理员/SYSTEM/p1553
+3. `.codex` 破继承：agent_runner 降到 (RX)（去掉 DELETE_CHILD）
+4. D 盘根：`Authenticated Users` 从 (M) 降为 (RX)
+5. 验证命令 + 一条命令的回滚
+
+### 4.4 行为验收（14 项）未做
+
+必须以 agent_runner 身份实跑 `D:\agent-work\_run.cmd`（脚本内 9 处过期路径已改好）。
+缺口令 → **未做**，因此 L0 仍标 `config-only`，不升级。
 
 ## 五、当前整体状态
 
