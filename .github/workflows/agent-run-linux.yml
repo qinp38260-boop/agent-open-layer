@@ -22,6 +22,9 @@ jobs:
       - name: 准备独立用户 + 工作目录 + 策略 + 闸门
         run: |
           set -eux
+          # /home/runner 不可被其他账号穿越，把应用拷到公共可读位置
+          sudo cp -a "$GITHUB_WORKSPACE" /opt/oag-app
+          sudo chmod -R a+rX /opt/oag-app
           sudo useradd -m -s /bin/bash agent_runner
           sudo mkdir -p /srv/agent-work /srv/codex-home
           sudo chown -R agent_runner:agent_runner /srv/agent-work
@@ -36,7 +39,7 @@ jobs:
           JSON
           sudo cp /tmp/policy.json /srv/codex-home/policy.json
           mkdir -p /tmp/gen
-          node -e 'import("./src/adapter/codex/guard.js").then(m=>m.install({codexHome:"/tmp/gen", policyPath:"/srv/codex-home/policy.json", auditPath:"/srv/agent-work/audit.jsonl"}))'
+          cd /opt/oag-app && node -e 'import("./src/adapter/codex/guard.js").then(m=>m.install({codexHome:"/tmp/gen", policyPath:"/srv/codex-home/policy.json", auditPath:"/srv/agent-work/audit.jsonl"}))'
           sudo cp /tmp/gen/oag-guard.mjs /srv/codex-home/oag-guard.mjs
           sudo cp /tmp/gen/oag-shim.mjs /srv/codex-home/oag-shim.mjs 2>/dev/null || true
           # 票据目录要能被 agent 写（wrapper 以 agent 身份签票），但 codex-home 本身保持 root 属主，
@@ -52,13 +55,13 @@ jobs:
         run: |
           set -o pipefail
           cd /srv/agent-work
-          sudo -u agent_runner env PATH="$PATH" node "$GITHUB_WORKSPACE/bin/oag.js" run \
+          sudo -u agent_runner env PATH="$PATH" node /opt/oag-app/bin/oag.js run \
             --max-denies 2 \
             --cwd /srv/agent-work \
             --codex-home /srv/codex-home \
             --policy /srv/codex-home/policy.json \
             --no-canary \
-            -- node "$GITHUB_WORKSPACE/scripts/fake-host.mjs" --guard /srv/codex-home/oag-guard.mjs --root /srv/agent-work \
+            -- node /opt/oag-app/scripts/fake-host.mjs --guard /srv/codex-home/oag-guard.mjs --root /srv/agent-work \
             | tee /tmp/run.txt
           CODE=${PIPESTATUS[0]}
           echo "wrapper_exit=$CODE" | tee -a /tmp/run.txt
